@@ -30,15 +30,24 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -49,6 +58,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pomodoro.AppTheme
 import com.example.pomodoro.AppColors
+import com.example.pomodoro.CardGlass
+import com.example.pomodoro.LocalCardGlass
 import com.example.pomodoro.W
 import com.example.pomodoro.auroraBackdrop
 import com.example.pomodoro.latinLine
@@ -133,19 +144,47 @@ fun CardBox(
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     val c = AppTheme.colors
-    Column(
-        modifier
-            .shadow(8.dp, RoundedCornerShape(radius), clip = false, ambientColor = c.shadow, spotColor = c.shadow)
-            .clip(RoundedCornerShape(radius))
-            // 网页 [data-theme=aurora] .card backdrop-filter: blur(16px) saturate(1.5)
-            .auroraBackdrop(1.5f)
-            // [data-bg-active]：卡片底色 52%、描边 70%（对应网页 .card）
-            .background(glassDim(c.container, 0.52f))
-            .border(1.dp, glassDim(c.divider, 0.70f), RoundedCornerShape(radius))
-            // 网页 .card 是 border-box：1px 边框占掉内边距（内容整体 +1）
-            .padding(padding + 1.dp),
-        content = content,
-    )
+    // [data-bg-active]：卡片底色 52%、描边 70%（对应网页 .card）
+    val cardBg = glassDim(c.container, 0.52f)
+    // 先算好卡片的 modifier：此时还未提供 LocalCardGlass，卡片自身不会重复叠底色
+    val cardModifier = Modifier
+        .clip(RoundedCornerShape(radius))
+        // 网页 [data-theme=aurora] .card backdrop-filter: blur(16px) saturate(1.5)
+        .auroraBackdrop(1.5f)
+        .background(cardBg)
+        .border(1.dp, glassDim(c.divider, 0.70f), RoundedCornerShape(radius))
+        // 网页 .card 是 border-box：1px 边框占掉内边距（内容整体 +1）
+        .padding(padding + 1.dp)
+    Box(modifier) {
+        // 网页 .card box-shadow：极光 0 12px 36px rgba(0,0,0,.32)、其余 0 8px 24px。
+        // Modifier.shadow 无偏移且强度不足（实测几乎不可见），改为「偏移 + 高斯模糊 + 挖掉卡片本体」。
+        Box(
+            Modifier
+                .matchParentSize()
+                .drawWithContent {
+                    // CSS box-shadow 不画在 border box 内：先模糊，再把卡片形状挖掉
+                    val r = radius.toPx()
+                    val hole = Path().apply {
+                        addRoundRect(
+                            RoundRect(Rect(0f, 0f, size.width, size.height), CornerRadius(r)),
+                        )
+                    }
+                    clipPath(hole, ClipOp.Difference) {
+                        translate(0f, (if (c.aurora) 12.dp else 8.dp).toPx()) {
+                            this@drawWithContent.drawContent()
+                        }
+                    }
+                }
+                // CSS blur-radius 是 2σ：36px→σ18、24px→σ12
+                .blur(if (c.aurora) 18.dp else 12.dp, BlurredEdgeTreatment.Unbounded)
+                .background(c.shadow, RoundedCornerShape(radius)),
+        )
+        CompositionLocalProvider(
+            LocalCardGlass provides if (c.aurora) CardGlass(cardBg, 1.5f) else null,
+        ) {
+            Column(modifier = cardModifier, content = content)
+        }
+    }
 }
 
 /** 卡片标题：<strong> 部分用 onSurface（浏览器 bolder → 命中 800 字重）/ 其余用 onSurfaceVariant，15sp/700 */
@@ -170,6 +209,8 @@ fun Segment(
     Row(
         modifier
             .clip(RoundedCornerShape(16.dp))
+            // 网页 [data-theme=aurora] .segment backdrop-filter: blur(8px)（无 saturate）
+            .auroraBackdrop(1f)
             .background(glassSurface(0))
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -313,6 +354,8 @@ fun GhostButton(icon: String, onClick: () -> Unit) {
             .size(52.dp)
             .scale(scale)
             .clip(RoundedCornerShape(18.dp))
+            // 网页 [data-theme=aurora] .btn-ghost backdrop-filter: blur(8px)
+            .auroraBackdrop(1f)
             .background(glassSurface(1))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -334,6 +377,8 @@ fun GhostWideButton(text: String, icon: String, onClick: () -> Unit) {
             .height(46.dp)
             .scale(scale)
             .clip(RoundedCornerShape(18.dp))
+            // 网页 [data-theme=aurora] .btn-ghost backdrop-filter: blur(8px)
+            .auroraBackdrop(1f)
             .background(glassSurface(1))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 18.dp),

@@ -84,8 +84,12 @@ import com.example.pomodoro.ui.TimerPage
 import com.example.pomodoro.ui.ToastBar
 import com.example.pomodoro.ui.TodosPage
 import kotlinx.coroutines.delay
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /** Miuix NavTransitions.MiuixDefault 的近似曲线（与网页 --nav-ease 同源） */
 private val NavEase = CubicBezierEasing(0.4f, 1.2f, 0.95f, 0.97f)
@@ -229,13 +233,27 @@ class AuroraFieldSpec(val image: ImageBitmap)
 val LocalAuroraField = compositionLocalOf<AuroraFieldSpec?> { null }
 
 /**
+ * 卡片毛玻璃信息：[color] 是卡片自身底色，[saturation] 是卡片 backdrop-filter 的增艳倍数。
+ * Chromium 对「卡片(backdrop-filter) → 子元素(backdrop-filter)」的背层采样会再叠一层卡片底色
+ *（实测：子元素的背层 = 卡片可见像素 + 卡片底色再合成一次），由 [LocalCardGlass] 传给子元素。
+ */
+internal class CardGlass(val color: Color, val saturation: Float)
+
+internal val LocalCardGlass = compositionLocalOf<CardGlass?> { null }
+
+/**
  * 玻璃容器背层模拟：容器自身在根坐标系的位置 + 对齐绘制场位图（saturate 矩阵），
- * 对应网页 backdrop-filter 的 saturate(N)（模糊对低频渐变影响极小，忽略）。
+ * 对应网页 backdrop-filter 的 saturate(N)（模糊分量本身不改变低频背层颜色，忽略）。
  * 仅在极光主题且根部提供了 [LocalAuroraField] 时生效。
+ * 卡片内嵌的玻璃（segment / stat-cell / btn-ghost）会读到 [LocalCardGlass]：
+ * 背层再叠加两次卡片底色（卡片自身一次 + 嵌套 backdrop-filter 的一次），
+ * 增艳倍率与卡片相乘（白色底色对 saturate 不变，故可直接合并矩阵）。
  */
 @Composable
 internal fun Modifier.auroraBackdrop(saturation: Float): Modifier {
     val spec = LocalAuroraField.current ?: return this
+    val card = LocalCardGlass.current
+    val combined = saturation * (card?.saturation ?: 1f)
     var posInRoot by remember { mutableStateOf(Offset.Unspecified) }
     return this
         // 副本必须裁到容器自身（对应 CSS backdrop-filter 只作用于元素背后区域）
@@ -246,9 +264,13 @@ internal fun Modifier.auroraBackdrop(saturation: Float): Modifier {
                 drawImage(
                     spec.image,
                     dstOffset = IntOffset((-posInRoot.x).roundToInt(), (-posInRoot.y).roundToInt()),
-                    colorFilter = if (saturation == 1f) null
-                    else ColorFilter.colorMatrix(saturateMatrix(saturation)),
+                    colorFilter = if (combined == 1f) null
+                    else ColorFilter.colorMatrix(saturateMatrix(combined)),
                 )
+                if (card != null) {
+                    drawRect(card.color)
+                    drawRect(card.color)
+                }
             }
         }
 }
@@ -274,13 +296,21 @@ internal fun saturateMatrix(sat: Float): ColorMatrix {
  * 参数逐项对应 CSS：`radial-gradient(58% 58% at 18% 22%, rgba(124,77,255,.6), transparent 62%)` 等。
  */
 private fun DrawScope.drawAuroraField(wPx: Float, hPx: Float, s: Float, colorFilter: ColorFilter? = null) {
+    // CSS linear-gradient(135deg, …)：梯度轴过中心，长度 = w·|sinA| + h·|cosA|。
+    // 之前用 (0,0)→(w,h)，在非正方形画布上方向/长度都不对（基础底色会整体偏移）。
+    val angle = 135.0 * PI / 180.0
+    val dx = sin(angle).toFloat()
+    val dy = -cos(angle).toFloat()
+    val axisLen = abs(wPx * dx) + abs(hPx * dy)
+    val center = Offset(wPx / 2f, hPx / 2f)
+    val axis = Offset(dx * axisLen / 2f, dy * axisLen / 2f)
     drawRect(
         Brush.linearGradient(
             0f to Color(0xFF080A1C),
             0.52f to Color(0xFF14102E),
             1f to Color(0xFF0B1030),
-            start = Offset.Zero,
-            end = Offset(wPx, hPx),
+            start = center - axis,
+            end = center + axis,
         ),
         // 显式给满场尺寸：drawRect(brush) 默认用 DrawScope 的节点尺寸，
         // 在卡片/顶栏这类小节点里会把暗底只画一角，导致光斑悬空叠加（亮雾）
