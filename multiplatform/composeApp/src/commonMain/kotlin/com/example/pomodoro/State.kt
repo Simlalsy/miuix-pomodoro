@@ -283,6 +283,12 @@ class State(private val storage: SettingsStorage = NoOpStorage) {
             saveDays()
             saveSettings()
         }
+        if (notify && !skipped) {
+            platformNotify(
+                "🍅 番茄钟",
+                if (mode == TimerMode.Focus) "专注完成！休息一下吧 ☕" else "休息结束，准备开始新的专注 🎯",
+            )
+        }
         onTimerFinished?.invoke()
         val next = when (mode) {
             TimerMode.Focus -> if (completedSessions > 0 && completedSessions % sessionsBeforeLong == 0) TimerMode.Long else TimerMode.Short
@@ -342,6 +348,13 @@ class State(private val storage: SettingsStorage = NoOpStorage) {
             else -> "light"
         }
         saveSettings()
+        val name = when (theme) {
+            "system" -> "跟随系统"
+            "light" -> "浅色"
+            "dark" -> "深色"
+            else -> "极光"
+        }
+        showToast("主题：$name", "palette")
     }
 
     fun effectiveDark(systemDark: Boolean): Boolean = when (theme) {

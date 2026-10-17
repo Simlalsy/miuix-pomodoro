@@ -47,6 +47,43 @@ actual fun startForegroundService(title: String, text: String) { /* Desktop: no-
 
 actual fun stopForegroundService() { /* Desktop: no-op */ }
 
+private var trayIcon: java.awt.TrayIcon? = null
+
+/** 桌面通知：系统托盘气泡（Windows 通知中心 / macOS 通知中心 / Linux 通知守护） */
+private fun ensureTrayIcon(): java.awt.TrayIcon? {
+    trayIcon?.let { return it }
+    if (!java.awt.SystemTray.isSupported()) return null
+    return try {
+        val image = java.awt.image.BufferedImage(64, 64, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        val g = image.createGraphics()
+        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
+        g.color = java.awt.Color(0x34, 0x82, 0xFF)
+        g.fillRoundRect(0, 0, 64, 64, 20, 20)
+        g.color = java.awt.Color.WHITE
+        g.stroke = java.awt.BasicStroke(5f, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND)
+        g.drawOval(18, 18, 28, 28)
+        g.drawLine(32, 32, 32, 24)
+        g.drawLine(32, 32, 39, 37)
+        g.dispose()
+        val icon = java.awt.TrayIcon(image, "番茄钟").apply { isImageAutoSize = true }
+        java.awt.SystemTray.getSystemTray().add(icon)
+        Runtime.getRuntime().addShutdownHook(Thread { runCatching { java.awt.SystemTray.getSystemTray().remove(icon) } })
+        trayIcon = icon
+        icon
+    } catch (_: Exception) {
+        null
+    }
+}
+
+actual fun requestNotificationPermission(onResult: (Boolean) -> Unit) {
+    onResult(java.awt.SystemTray.isSupported())
+}
+
+actual fun platformNotify(title: String, body: String) {
+    val icon = ensureTrayIcon() ?: return
+    runCatching { icon.displayMessage(title, body, java.awt.TrayIcon.MessageType.NONE) }
+}
+
 @Composable
 actual fun KeepScreenOn(enabled: Boolean) { /* Desktop no-op */ }
 

@@ -3,7 +3,9 @@ package com.example.pomodoro
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
@@ -11,7 +13,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +47,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -49,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
@@ -63,11 +71,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -90,11 +103,14 @@ import com.example.pomodoro.ui.StatsPage
 import com.example.pomodoro.ui.TimerPage
 import com.example.pomodoro.ui.ToastBar
 import com.example.pomodoro.ui.TodosPage
+import com.example.pomodoro.ui.miuixRipple
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -114,7 +130,7 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
         LaunchedEffect(state.pendingAutoStart) { state.consumeAutoStart(scope) }
         LaunchedEffect(state.toast) {
             if (state.toast != null) {
-                delay(2200)
+                delay(2400)
                 state.toast = null
             }
         }
@@ -193,14 +209,11 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
                 }
             }
 
-            state.toast?.let { toast ->
-                Box(
-                    Modifier.fillMaxSize().padding(bottom = 36.dp),
-                    contentAlignment = Alignment.BottomCenter,
-                ) { ToastBar(toast.text, toast.icon) }
-            }
+            ToastHost(state.toast)
 
             if (state.miniVisible) MiniTimerOverlay(state)
+
+            ThemeWashHost(state.theme, if (state.theme == "system") isDark else false, c.primary)
 
             if (splashVisible) {
                 SplashScreen(
@@ -248,6 +261,13 @@ val LocalCompact = staticCompositionLocalOf { false }
 
 /** 视口宽度（dp），用于 clamp(230px, 62vw, 300px) 这类按视口计算的尺寸 */
 val LocalScreenWidth = staticCompositionLocalOf { 1280.dp }
+
+/** 页面/卡片入场进度：page = pageIn 0.35s，card = cardIn 0.5s（延迟 20ms），对应网页同名动画 */
+internal class PageEntryAnim(val page: androidx.compose.runtime.State<Float>, val card: androidx.compose.runtime.State<Float>)
+
+internal val LocalPageEntry = staticCompositionLocalOf {
+    PageEntryAnim(androidx.compose.runtime.mutableStateOf(1f), androidx.compose.runtime.mutableStateOf(1f))
+}
 
 /**
  * 卡片毛玻璃信息：[color] 是卡片自身底色，[saturation] 是卡片 backdrop-filter 的增艳倍数。
@@ -502,13 +522,19 @@ private fun RailBottom(state: State) {
 private fun RailItem(page: Page, active: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val c = AppTheme.colors
     val compact = LocalCompact.current
+    // 网页 .rail-item:active { transform: scale(.9) }，transform .35s var(--spring)
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val press by animateFloatAsState(if (pressed) 0.9f else 1f, tween(350, easing = CssSpring))
     Column(
         modifier
             .widthIn(max = 80.dp)
+            .scale(press)
             // 网页窄屏 .rail-item：padding 8 / radius 14
             .clip(RoundedCornerShape(if (compact) 14.dp else 16.dp))
             .background(if (active) c.soft else Color.Transparent)
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .miuixRipple(if (active) c.primary else c.variant)
             .padding(vertical = if (compact) 8.dp else 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -520,6 +546,174 @@ private fun RailItem(page: Page, active: Boolean, modifier: Modifier = Modifier,
     }
 }
 
+/** Toast：底部 36、translateY(20→0)、opacity 0→1，0.35s `var(--spring)` */
+@Composable
+private fun ToastHost(toast: ToastMsg?) {
+    var shown by remember { mutableStateOf<ToastMsg?>(null) }
+    val vis = remember { Animatable(0f) }
+    LaunchedEffect(toast) {
+        if (toast != null) {
+            shown = toast
+            vis.animateTo(1f, tween(350, easing = CssSpring))
+        } else {
+            vis.animateTo(0f, tween(350, easing = CssSpring))
+        }
+    }
+    val current = shown ?: return
+    Box(Modifier.fillMaxSize().padding(bottom = 36.dp), contentAlignment = Alignment.BottomCenter) {
+        Box(
+            Modifier.graphicsLayer {
+                val p = vis.value
+                alpha = p.coerceIn(0f, 1f)
+                translationY = (1f - p) * 20.dp.toPx()
+            },
+        ) { ToastBar(current.text, current.icon) }
+    }
+}
+
+/**
+ * 主题切换洗刷层（网页 `.theme-flash`）：
+ * radial-gradient(circle at 50% 46%, primary 42%, transparent 60%)，
+ * scale .5→1.4、opacity 0→.55（45%）→0，0.75s `var(--ease)`。
+ */
+@Composable
+private fun ThemeWashHost(theme: String, systemDark: Boolean, color: Color) {
+    val anim = remember { Animatable(1f) }
+    var ready by remember { mutableStateOf(false) }
+    LaunchedEffect(theme, systemDark) {
+        if (!ready) {
+            ready = true
+            return@LaunchedEffect
+        }
+        anim.snapTo(0f)
+        anim.animateTo(1f, tween(750, easing = CssEase))
+    }
+    val t = anim.value
+    if (t >= 1f) return
+    val alpha = if (t < 0.45f) 0.55f * (t / 0.45f) else 0.55f * (1f - (t - 0.45f) / 0.55f)
+    val scale = 0.5f + 0.9f * t
+    Canvas(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                scaleX = scale; scaleY = scale
+                this.alpha = alpha
+            },
+    ) {
+        val center = Offset(size.width * 0.5f, size.height * 0.46f)
+        val radius = maxOf(
+            hypot(center.x, center.y),
+            hypot(size.width - center.x, center.y),
+            hypot(center.x, size.height - center.y),
+            hypot(size.width - center.x, size.height - center.y),
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                0f to color.copy(alpha = 0.42f),
+                0.6f to Color.Transparent,
+                center = center,
+                radius = radius,
+            ),
+            radius = radius,
+            center = center,
+        )
+    }
+}
+
+/**
+ * 网页 enableOverscrollStretch()：拖到顶/底后继续下拉时，内容做橡皮筋位移 + 纵向拉伸，
+ * 松手按 .5s var(--spring) 弹回。CAP = .55×视口高、位移占拉伸量一半。
+ * 只响应触摸（鼠标滚轮不触发），且不消费事件，不影响正常滚动。
+ */
+private fun Modifier.overscrollStretch(scroll: ScrollState, enabled: Boolean): Modifier = composed {
+    val stretch = remember { mutableFloatStateOf(0f) }
+    val atTop = remember { mutableStateOf(true) }
+    val dragging = remember { mutableStateOf(false) }
+    var settle by remember { mutableIntStateOf(0) }
+    LaunchedEffect(settle, dragging.value) {
+        if (dragging.value || stretch.floatValue <= 0f) return@LaunchedEffect
+        animate(stretch.floatValue, 0f, animationSpec = tween(500, easing = CssSpring)) { v, _ ->
+            stretch.floatValue = v
+        }
+    }
+    LaunchedEffect(enabled) {
+        if (!enabled) {
+            dragging.value = false
+            settle++
+        }
+    }
+    this
+        .pointerInput(enabled) {
+            var lastY = 0f
+            var mode = 0
+            var over = 0f
+            var touch = false
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (event.changes.size != 1) {
+                        if (touch) {
+                            touch = false
+                            dragging.value = false
+                            if (mode != 0) settle++
+                            mode = 0
+                        }
+                        continue
+                    }
+                    val change = event.changes[0]
+                    val dy = change.position.y - lastY
+                    when (event.type) {
+                        PointerEventType.Press -> {
+                            touch = enabled && change.type == PointerType.Touch
+                            lastY = change.position.y
+                            mode = 0
+                            over = 0f
+                            atTop.value = scroll.value <= 2
+                            if (touch) {
+                                dragging.value = false
+                                stretch.floatValue = 0f
+                            }
+                        }
+                        PointerEventType.Move -> {
+                            if (!touch) continue
+                            lastY = change.position.y
+                            if (mode == 0) {
+                                val atBottom = scroll.value >= scroll.maxValue - 2
+                                if (dy > 0 && atTop.value) mode = 1
+                                else if (dy < 0 && atBottom) mode = -1
+                            }
+                            if (mode != 0) {
+                                over = if (mode == 1) maxOf(0f, over + dy) else maxOf(0f, over - dy)
+                                val cap = size.height * 0.55f
+                                val d = over * cap / (cap + over)
+                                if (d > 0f) {
+                                    dragging.value = true
+                                    stretch.floatValue = d
+                                }
+                            }
+                        }
+                        PointerEventType.Release -> {
+                            if (!touch) continue
+                            touch = false
+                            if (mode != 0) settle++
+                            mode = 0
+                            dragging.value = false
+                        }
+                    }
+                }
+            }
+        }
+        .graphicsLayer {
+            val d = stretch.floatValue
+            if (d > 0.01f) {
+                val top = atTop.value
+                transformOrigin = TransformOrigin(0.5f, if (top) 0f else 1f)
+                translationY = (if (top) d else -d) * 0.5f
+                scaleY = 1f + d / size.height.coerceAtLeast(1f)
+            }
+        }
+}
+
 /** 主内容列：顶栏 + 页面（最大宽度 760dp 居中，与网页 .main 一致） */
 @Composable
 private fun MainColumn(state: State, modifier: Modifier = Modifier) {
@@ -528,16 +722,28 @@ private fun MainColumn(state: State, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxHeight().widthIn(max = 760.dp)) {
             Topbar(state)
-            val anim = remember { Animatable(1f) }
+            // 网页 .page { animation: pageIn .35s var(--spring) } + .card > * { cardIn .5s（延迟 20ms）}
+            val pageAnim = remember { Animatable(1f) }
+            val cardAnim = remember { Animatable(1f) }
+            val entryAnim = remember { PageEntryAnim(pageAnim.asState(), cardAnim.asState()) }
+            val scrollState = rememberScrollState()
             LaunchedEffect(state.page) {
-                anim.snapTo(0f)
-                anim.animateTo(1f, spring(dampingRatio = 0.78f, stiffness = 380f))
+                if (State.debugFreezeAnim) {
+                    pageAnim.snapTo(1f)
+                    cardAnim.snapTo(1f)
+                    return@LaunchedEffect
+                }
+                pageAnim.snapTo(0f)
+                cardAnim.snapTo(0f)
+                launch { pageAnim.animateTo(1f, tween(350, easing = CssSpring)) }
+                launch { cardAnim.animateTo(1f, tween(500, delayMillis = 20, easing = CssSpring)) }
             }
             Column(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
+                    .overscrollStretch(scrollState, state.overscroll)
                     // 网页 .content：24/28/48；窄屏 18/16/32
                     .padding(
                         start = if (compact) 16.dp else 28.dp,
@@ -546,17 +752,21 @@ private fun MainColumn(state: State, modifier: Modifier = Modifier) {
                         bottom = if (compact) 32.dp else 48.dp,
                     )
                     .graphicsLayer {
-                        alpha = anim.value
-                        translationY = (1f - anim.value) * 10.dp.toPx()
-                        val s = 0.99f + 0.01f * anim.value
+                        alpha = pageAnim.value.coerceIn(0f, 1f)
+                        translationY = (1f - pageAnim.value) * 10.dp.toPx()
+                        val s = 0.99f + 0.01f * pageAnim.value
                         scaleX = s; scaleY = s
                     },
             ) {
-                when (state.page) {
-                    Page.Timer -> TimerPage(state, compact = compact)
-                    Page.Stats -> StatsPage(state)
-                    Page.Todos -> TodosPage(state)
-                    Page.Settings -> SettingsPage(state)
+                CompositionLocalProvider(
+                    LocalPageEntry provides entryAnim,
+                ) {
+                    when (state.page) {
+                        Page.Timer -> TimerPage(state, compact = compact)
+                        Page.Stats -> StatsPage(state)
+                        Page.Todos -> TodosPage(state)
+                        Page.Settings -> SettingsPage(state)
+                    }
                 }
             }
         }
@@ -565,8 +775,7 @@ private fun MainColumn(state: State, modifier: Modifier = Modifier) {
 
 /** 顶栏：标题/副标题 + 主题切换（padding 22/28/14，标题 26sp/800，底部分隔线） */
 @Composable
-private fun Topbar(state: State) {
-    val c = AppTheme.colors
+private fun Topbar(state: State) {    val c = AppTheme.colors
     val compact = LocalCompact.current
     // 网页 @media(max-width:360px)：标题 22px
     val narrow = LocalScreenWidth.current <= 360.dp

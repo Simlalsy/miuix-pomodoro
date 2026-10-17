@@ -1,13 +1,14 @@
 package com.example.pomodoro.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -31,15 +32,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.ClipOp
@@ -49,6 +56,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -60,8 +69,12 @@ import androidx.compose.ui.unit.sp
 import com.example.pomodoro.AppTheme
 import com.example.pomodoro.AppColors
 import com.example.pomodoro.CardGlass
+import com.example.pomodoro.CssEase
+import com.example.pomodoro.CssRippleEase
+import com.example.pomodoro.CssSpring
 import com.example.pomodoro.LocalCardGlass
 import com.example.pomodoro.LocalCompact
+import com.example.pomodoro.LocalPageEntry
 import com.example.pomodoro.LocalScreenWidth
 import com.example.pomodoro.W
 import com.example.pomodoro.auroraBackdrop
@@ -80,6 +93,55 @@ import com.example.pomodoro.normalLine
 internal fun glassDim(color: Color, pct: Float): Color {
     val c = AppTheme.colors
     return if (c.bgActive) color.copy(alpha = color.alpha * pct) else color
+}
+
+private class RippleSpec {
+    var center: Offset = Offset.Zero
+    var diameter: Float = 0f
+}
+
+/**
+ * 复刻网页 `.ripple`（MIUI 触感）：按下处半径 = 元素长边/2、scale 0→3、
+ * opacity .5 → .25（60%）→ 0，0.7s `cubic-bezier(.22,1,.36,1)`。
+ * 只观察 Initial 事件、不消费，避免与 clickable 抢手势。
+ */
+internal fun Modifier.miuixRipple(color: Color): Modifier = composed {
+    val spec = remember { RippleSpec() }
+    val anim = remember { Animatable(1f) }
+    val trigger = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    LaunchedEffect(trigger.intValue) {
+        if (trigger.intValue == 0) return@LaunchedEffect
+        anim.snapTo(0f)
+        anim.animateTo(1f, tween(700, easing = CssRippleEase))
+    }
+    this
+        .pointerInput(Unit) {
+            var wasPressed = false
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.pressed }
+                    if (change != null && !wasPressed) {
+                        spec.center = change.position
+                        spec.diameter = kotlin.math.max(size.width, size.height).toFloat()
+                        trigger.intValue++
+                    }
+                    wasPressed = change != null
+                }
+            }
+        }
+        .drawWithContent {
+            drawContent()
+            val p = anim.value
+            if (p < 1f) {
+                val alpha = if (p < 0.6f) 0.5f - 0.25f * (p / 0.6f) else 0.25f * (1f - (p - 0.6f) / 0.4f)
+                drawCircle(
+                    color = color.copy(alpha = color.alpha * 0.22f * alpha),
+                    radius = spec.diameter * 1.5f * p,
+                    center = spec.center,
+                )
+            }
+        }
 }
 
 /**
@@ -176,6 +238,8 @@ fun CardBox(
     modifier: Modifier = Modifier,
     padding: Dp = Dp.Unspecified,
     radius: Dp = Dp.Unspecified,
+    /** 是否播放网页 cardIn 入场（时钟卡片自己给环做 popIn，故关掉整块动画） */
+    entry: Boolean = true,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     val c = AppTheme.colors
@@ -208,7 +272,24 @@ fun CardBox(
         CompositionLocalProvider(
             LocalCardGlass provides if (c.aurora) CardGlass(cardBg, 1.5f) else null,
         ) {
-            Column(modifier = cardModifier, content = content)
+            Column(modifier = cardModifier) {
+                val entryAnim = LocalPageEntry.current
+                val cardEntry = entryAnim.card.value
+                Column(
+                    Modifier.then(
+                        if (entry && cardEntry < 0.999f) {
+                            Modifier.graphicsLayer {
+                                val p = entryAnim.card.value
+                                alpha = p.coerceIn(0f, 1f)
+                                translationY = (1f - p) * 14.dp.toPx()
+                                val s = 0.99f + 0.01f * p
+                                scaleX = s; scaleY = s
+                            }
+                        } else Modifier,
+                    ),
+                    content = content,
+                )
+            }
         }
     }
 }
@@ -245,8 +326,11 @@ fun Segment(
     ) {
         items.forEachIndexed { i, label ->
             val active = i == selectedIndex
-            val bg by animateColorAsState(if (active) glassSurface(2) else Color.Transparent, tween(350))
-            val fg by animateColorAsState(if (active) c.onSurface else c.variant, tween(350))
+            val bg by animateColorAsState(if (active) glassSurface(2) else Color.Transparent, tween(350, easing = CssEase))
+            val fg by animateColorAsState(if (active) c.onSurface else c.variant, tween(350, easing = CssEase))
+            val interaction = remember { MutableInteractionSource() }
+            val pressed by interaction.collectIsPressedAsState()
+            val press by animateFloatAsState(if (pressed) 0.96f else 1f, tween(350, easing = CssSpring))
             Box(Modifier.weight(1f)) {
                 // 网页 .segment button.active box-shadow：极光 0 2px 10px rgba(0,0,0,.28)、
                 // 其余主题 0 2px 8px rgba(0,0,0,.08)
@@ -262,23 +346,30 @@ fun Segment(
                 Box(
                     Modifier
                         .fillMaxWidth()
+                        .then(if (press < 0.999f) Modifier.scale(press) else Modifier)
                         .clip(RoundedCornerShape(12.dp))
                         .background(bg)
-                        .clickable { onSelect(i) },
+                        .clickable(interactionSource = interaction, indication = null) { onSelect(i) }
+                        .miuixRipple(fg),
                     contentAlignment = Alignment.Center,
                 ) {
                     // 选中态下方的主色条（growbar：从左向右 scaleX 展开）
                     // 注意：条要相对“按钮整个盒子”定位（同网页 ::before 的 absolute），
                     // 所以按钮的垂直 padding 放到文字上，别放在 Box 上（否则条会贴到内容盒底部=文字中线）
                     if (active) {
-                        val p by animateFloatAsState(1f, spring(dampingRatio = 0.6f, stiffness = 500f))
+                        val p = remember { Animatable(0f) }
+                        LaunchedEffect(Unit) { p.animateTo(1f, tween(300, easing = CssSpring)) }
                         Box(
                             Modifier
                                 .align(Alignment.BottomCenter)
                                 .padding(bottom = 6.dp)
-                                .fillMaxWidth(if (p <= 0f) 0.001f else 1f)
+                                .fillMaxWidth()
                                 .padding(horizontal = 12.dp)
                                 .height(3.dp)
+                                .graphicsLayer {
+                                    scaleX = p.value
+                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                                }
                                 .clip(RoundedCornerShape(2.dp))
                                 .background(c.primary),
                         )
@@ -332,35 +423,42 @@ private fun StepperButton(icon: String, onClick: () -> Unit) {
     val c = AppTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.82f else 1f, spring(dampingRatio = 0.55f, stiffness = 400f))
+    val scale by animateFloatAsState(if (pressed) 0.82f else 1f, tween(300, easing = CssSpring))
     Box(
         Modifier
             .size(34.dp)
             .scale(scale)
             .clip(RoundedCornerShape(9.dp))
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .miuixRipple(c.onSurface),
         contentAlignment = Alignment.Center,
     ) { Symbol(icon, 20.dp, c.onSurface) }
 }
 
-/** 开关：50×30 胶囊，圆形滑块 24，开启位移 20 */
+/** 开关：50×30 胶囊，圆形滑块 24，开启位移 20；滑块 0.3s 弹性、按下缩放 0.94 */
 @Composable
 fun AppSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
     val c = AppTheme.colors
-    val track by animateColorAsState(if (checked) c.primary else glassSurface(3), tween(300))
-    val knob by animateColorAsState(if (checked) c.onPrimary else c.onSurface, tween(300))
+    val track by animateColorAsState(if (checked) c.primary else glassSurface(3), tween(300, easing = CssEase))
+    val knob by animateColorAsState(if (checked) c.onPrimary else c.onSurface, tween(300, easing = CssEase))
+    val offset by animateFloatAsState(if (checked) 20f else 0f, tween(300, easing = CssSpring))
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(300, easing = CssSpring))
     Box(
         Modifier
             .size(width = 50.dp, height = 30.dp)
+            .scale(scale)
             .clip(RoundedCornerShape(15.dp))
             .background(track)
-            .clickable { onChange(!checked) },
+            .clickable(interactionSource = interaction, indication = null) { onChange(!checked) }
+            .miuixRipple(c.onSurface),
     ) {
         Box(
             Modifier
                 .padding(3.dp)
                 .size(24.dp)
-                .graphicsLayer { translationX = if (checked) 20.dp.toPx() else 0f }
+                .graphicsLayer { translationX = offset.dp.toPx() }
                 .shadow(2.dp, CircleShape, clip = false)
                 .clip(CircleShape)
                 .background(knob),
@@ -374,14 +472,15 @@ fun IconBtn(icon: String, size: Dp = 44.dp, iconSize: Dp = 24.dp, tint: Color? =
     val c = AppTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.88f else 1f, spring(dampingRatio = 0.5f, stiffness = 600f))
+    val scale by animateFloatAsState(if (pressed) 0.88f else 1f, tween(350, easing = CssSpring))
     Box(
         Modifier
             .size(size)
             .scale(scale)
             .clip(RoundedCornerShape(14.dp))
             .background(bg)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .miuixRipple(tint ?: c.onSurface),
         contentAlignment = Alignment.Center,
     ) { Symbol(icon, iconSize, tint ?: c.onSurface) }
 }
@@ -392,7 +491,7 @@ fun GhostButton(icon: String, onClick: () -> Unit) {
     val c = AppTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(dampingRatio = 0.5f, stiffness = 600f))
+    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(350, easing = CssSpring))
     Box(
         Modifier
             .size(52.dp)
@@ -401,7 +500,8 @@ fun GhostButton(icon: String, onClick: () -> Unit) {
             // 网页 [data-theme=aurora] .btn-ghost backdrop-filter: blur(8px)
             .auroraBackdrop(1f)
             .background(glassSurface(1))
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .miuixRipple(c.onSurface),
         contentAlignment = Alignment.Center,
     ) { Symbol(icon, 24.dp, c.onSurface) }
 }
@@ -415,7 +515,7 @@ fun GhostWideButton(text: String, icon: String, onClick: () -> Unit) {
     val c = AppTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(dampingRatio = 0.5f, stiffness = 600f))
+    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(350, easing = CssSpring))
     Row(
         Modifier
             .height(46.dp)
@@ -425,6 +525,7 @@ fun GhostWideButton(text: String, icon: String, onClick: () -> Unit) {
             .auroraBackdrop(1f)
             .background(glassSurface(1))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .miuixRipple(c.onSurface)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -450,11 +551,21 @@ fun PrimaryButton(
     // 网页窄屏 .btn-primary：height 56 / padding 0 26
     val h = if (compact && height == 60.dp) 56.dp else height
     val hp = if (compact && paddingHorizontal == 34.dp) 26.dp else paddingHorizontal
-    val bg by animateColorAsState(if (running) c.containerHigh else c.primary, tween(300))
-    val fg by animateColorAsState(if (running) c.onSurface else c.onPrimary, tween(300))
+    val bg by animateColorAsState(if (running) c.containerHigh else c.primary, tween(300, easing = CssEase))
+    val fg by animateColorAsState(if (running) c.onSurface else c.onPrimary, tween(300, easing = CssEase))
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(dampingRatio = 0.5f, stiffness = 600f))
+    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(350, easing = CssSpring))
+    // 网页 popIcon()：开始/暂停时图标 iconPop 0.42s var(--spring)
+    // （scale .5→1.18@60%→1、rotate -25°→8°→0、opacity 0→1）
+    val iconPop = remember { Animatable(1f) }
+    var seenRunning by remember { mutableStateOf(running) }
+    LaunchedEffect(running) {
+        if (seenRunning == running) return@LaunchedEffect
+        seenRunning = running
+        iconPop.snapTo(0f)
+        iconPop.animateTo(1f, tween(420, easing = CssSpring))
+    }
     // 网页 .btn-primary box-shadow: 0 10px 24px primary@35%（仅向下偏移，无环境光）；
     // Compose 的 Modifier.shadow 会带 ambient（四周都有），用偏移+模糊层精确复刻
     Box(Modifier.height(h).scale(scale)) {
@@ -470,12 +581,24 @@ fun PrimaryButton(
                 .clip(RoundedCornerShape(18.dp))
                 .background(bg)
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+                .miuixRipple(fg)
                 .padding(horizontal = hp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
             if (icon != null) {
-                Symbol(icon, if (fontSize >= 16) 26.dp else 20.dp, fg)
+                Box(
+                    Modifier.graphicsLayer {
+                        val p = iconPop.value
+                        if (p < 0.999f) {
+                            val s = if (p < 0.6f) 0.5f + (1.18f - 0.5f) * (p / 0.6f) else 1.18f + (1f - 1.18f) * ((p - 0.6f) / 0.4f)
+                            val deg = if (p < 0.6f) -25f + 33f * (p / 0.6f) else 8f - 8f * ((p - 0.6f) / 0.4f)
+                            scaleX = s; scaleY = s
+                            rotationZ = deg
+                            alpha = (p / 0.6f).coerceIn(0f, 1f)
+                        }
+                    },
+                ) { Symbol(icon, if (fontSize >= 16) 26.dp else 20.dp, fg) }
                 Spacer(Modifier.width(8.dp))
             }
             Text(text, color = fg, fontFamily = AppTheme.font, fontSize = fontSize.sp, lineHeight = normalLine(fontSize), fontWeight = W.bold)
@@ -489,6 +612,17 @@ fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
     val c = AppTheme.colors
     // 网页 @media(max-width:360px)：.stat-cell padding 14 / .val 24px
     val narrow = LocalScreenWidth.current <= 360.dp
+    // 网页 setStat()：数值变化时 .val.bump（0 → 40% 缩放 1.22 → 1，0.5s var(--spring)）
+    val bump = remember { Animatable(1f) }
+    var previous by remember { mutableStateOf(value) }
+    LaunchedEffect(value) {
+        if (previous != value) {
+            previous = value
+            bump.snapTo(1f)
+            bump.animateTo(1.22f, tween(200, easing = CssSpring))
+            bump.animateTo(1f, tween(300, easing = CssSpring))
+        }
+    }
     Column(
         modifier
             .clip(RoundedCornerShape(16.dp))
@@ -511,6 +645,11 @@ fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
             fontSize = (if (narrow) 24 else 28).sp,
             lineHeight = latinLine(if (narrow) 24 else 28),
             fontWeight = W.extra,
+            modifier = Modifier.graphicsLayer {
+                val s = bump.value
+                scaleX = s; scaleY = s
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.5f)
+            },
         )
         // 钉住行盒：Skia 会把行高按整数像素向上取整，单元格会比网页高 0.5dp
         Text(
@@ -565,14 +704,19 @@ fun SettingRow(
 @Composable
 fun Chip(text: String, active: Boolean, onClick: () -> Unit) {
     val c = AppTheme.colors
-    val bg by animateColorAsState(if (active) c.primary else glassSurface(0), tween(300))
-    val fg by animateColorAsState(if (active) c.onPrimary else c.variant, tween(300))
+    val bg by animateColorAsState(if (active) c.primary else glassSurface(0), tween(300, easing = CssEase))
+    val fg by animateColorAsState(if (active) c.onPrimary else c.variant, tween(300, easing = CssEase))
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val press by animateFloatAsState(if (pressed) 0.94f else 1f, tween(300, easing = CssSpring))
     Box(
         Modifier
+            .then(if (press < 0.999f) Modifier.scale(press) else Modifier)
             .clip(RoundedCornerShape(12.dp))
             .background(bg)
             .border(1.dp, if (active) Color.Transparent else c.divider, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .miuixRipple(fg)
             // 网页 .tone-chip border-box：1px 边框 + 9/15 内边距 → 内容从 10/16 开始
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) { Text(text, color = fg, fontFamily = AppTheme.font, fontSize = 13.sp, lineHeight = normalLine(13), fontWeight = W.semi) }

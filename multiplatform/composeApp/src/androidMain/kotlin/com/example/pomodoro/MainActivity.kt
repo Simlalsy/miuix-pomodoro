@@ -31,19 +31,23 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var notificationManager: NotificationManager
     private lateinit var state: State
-    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* granted or denied */ }
+    private var permissionCallback: ((Boolean) -> Unit)? = null
+    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val cb = permissionCallback
+        permissionCallback = null
+        cb?.invoke(granted)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        current = this
         enableEdgeToEdge()
         createNotificationChannel()
-        requestNotificationPermission()
 
         val storage = AndroidSettingsStorage(this)
         state = State(storage)
         state.checkDailyReset()
         state.onTimerFinished = {
-            showNotification(state.mode.label, getCompletionText(state.mode))
             state.autoSave()
             TimerService.stop(this)
         }
@@ -61,17 +65,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+    fun hasNotificationPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    /** 对应网页 requestNotify()：只在用户打开「桌面通知」开关时请求权限 */
+    fun requestNotificationPermission(onResult: (Boolean) -> Unit) {
+        if (hasNotificationPermission()) {
+            onResult(true)
+            return
         }
+        if (permissionCallback != null) {
+            onResult(false)
+            return
+        }
+        permissionCallback = onResult
+        requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     override fun onPause() {
         super.onPause()
         state.autoSave()
+    }
+
+    override fun onDestroy() {
+        if (current === this) current = null
+        super.onDestroy()
     }
 
     override fun onStop() {
@@ -91,7 +110,7 @@ class MainActivity : ComponentActivity() {
         notificationManager.createNotificationChannel(channel)
     }
 
-    private fun showNotification(title: String, text: String) {
+    fun showSystemNotification(title: String, text: String) {
         val intent = android.content.Intent(this, MainActivity::class.java).apply {
             flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -118,14 +137,13 @@ class MainActivity : ComponentActivity() {
         notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
-    private fun getCompletionText(mode: TimerMode): String = when (mode) {
-        TimerMode.Focus -> "休息一下吧！🍅"
-        TimerMode.Short -> "短休息结束，继续加油！💪"
-        TimerMode.Long -> "长休息结束，准备下一轮！🚀"
-    }
-
     companion object {
         const val CHANNEL_ID = "pomodoro_timer"
         private const val NOTIFICATION_ID = 1001
+
+        /** 当前 Activity（通知发布/权限请求需要） */
+        @Volatile
+        var current: MainActivity? = null
+            private set
     }
 }

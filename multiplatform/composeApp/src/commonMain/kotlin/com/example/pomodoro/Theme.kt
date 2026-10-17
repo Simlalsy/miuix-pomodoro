@@ -1,5 +1,6 @@
 package com.example.pomodoro
 
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -172,6 +173,17 @@ object W {
     val bold = FontWeight(700)
     val extra = FontWeight(800)
 }
+
+/**
+ * 网页 `:root` 里的缓动曲线，逐条对应：
+ * `--spring: cubic-bezier(0.34, 1.56, 0.64, 1)`（弹性、会过冲）
+ * `--ease: cubic-bezier(0.4, 0, 0.2, 1)`
+ * `--nav-ease: cubic-bezier(0.4, 1.2, 0.95, 0.97)`
+ * 波纹用 `cubic-bezier(0.22, 1, 0.36, 1)`。
+ */
+internal val CssSpring = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
+internal val CssEase = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
+internal val CssRippleEase = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
 
 /**
  * CSS `line-height: normal` 在真实字体栈下的实测行盒高度（px = dp）。

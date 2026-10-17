@@ -64,6 +64,21 @@ actual fun startForegroundService(title: String, text: String) { /* Handled via 
 
 actual fun stopForegroundService() { /* Handled via MainActivity */ }
 
+actual fun requestNotificationPermission(onResult: (Boolean) -> Unit) {
+    val act = MainActivity.current
+    if (act == null) {
+        onResult(false)
+        return
+    }
+    act.runOnUiThread { act.requestNotificationPermission { granted -> onResult(granted) } }
+}
+
+actual fun platformNotify(title: String, body: String) {
+    val act = MainActivity.current ?: return
+    if (!act.hasNotificationPermission()) return
+    act.runOnUiThread { act.showSystemNotification(title, body) }
+}
+
 @Composable
 actual fun KeepScreenOn(enabled: Boolean) {
     val view = LocalView.current

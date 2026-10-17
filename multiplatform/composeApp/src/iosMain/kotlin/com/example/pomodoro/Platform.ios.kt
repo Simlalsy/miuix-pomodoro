@@ -16,9 +16,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import platform.AudioToolbox.AudioServicesPlaySystemSound
 import platform.Foundation.NSData
+import platform.Foundation.NSDate
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDefaults
 import platform.Foundation.dataWithContentsOfURL
+import platform.UserNotifications.UNAuthorizationOptionAlert
+import platform.UserNotifications.UNAuthorizationOptionBadge
+import platform.UserNotifications.UNAuthorizationOptionSound
+import platform.UserNotifications.UNMutableNotificationContent
+import platform.UserNotifications.UNNotificationRequest
+import platform.UserNotifications.UNNotificationSound
+import platform.UserNotifications.UNUserNotificationCenter
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 import platform.UIKit.UIApplication
 import platform.posix.memcpy
 
@@ -74,6 +84,24 @@ private fun NSData.toByteArray(): ByteArray {
 actual fun startForegroundService(title: String, text: String) { /* iOS 无前台服务概念 */ }
 
 actual fun stopForegroundService() { /* iOS: no-op */ }
+
+actual fun requestNotificationPermission(onResult: (Boolean) -> Unit) {
+    val options = UNAuthorizationOptionAlert or UNAuthorizationOptionSound or UNAuthorizationOptionBadge
+    UNUserNotificationCenter.currentNotificationCenter().requestAuthorizationWithOptions(options) { granted, _ ->
+        dispatch_async(dispatch_get_main_queue()) { onResult(granted) }
+    }
+}
+
+actual fun platformNotify(title: String, body: String) {
+    val content = UNMutableNotificationContent().apply {
+        this.title = title
+        this.body = body
+        sound = UNNotificationSound.defaultSound
+    }
+    val id = "pomodoro-" + NSDate().timeIntervalSince1970.toString()
+    val request = UNNotificationRequest.requestWithIdentifier(id, content, null)
+    UNUserNotificationCenter.currentNotificationCenter().addNotificationRequest(request, null)
+}
 
 @Composable
 actual fun KeepScreenOn(enabled: Boolean) {
