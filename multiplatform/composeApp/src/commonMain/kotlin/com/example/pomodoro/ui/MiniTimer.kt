@@ -9,10 +9,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -33,6 +36,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pomodoro.AppTheme
+import com.example.pomodoro.LocalCompact
 import com.example.pomodoro.State
 import com.example.pomodoro.W
 import kotlin.math.roundToInt
@@ -53,22 +57,27 @@ fun MiniTimerOverlay(state: State) {
         val pillW = with(density) { 156.dp.toPx() }
         val pillH = with(density) { 68.dp.toPx() }
         val margin = with(density) { 24.dp.toPx() }
+        // 网页窄屏 .mini-timer 距底 = 84px + safe-area-inset-bottom（落在底部导航之上）
+        val safeBottom = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding()
+        val compact = LocalCompact.current
+        val bottomGap = if (compact) 84.dp + safeBottom else 24.dp + safeBottom
+        val bottomGapPx = with(density) { (bottomGap + 24.dp).toPx() }
 
         Box(
             Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 24.dp, bottom = 24.dp)
+                .padding(end = if (compact) 14.dp else 24.dp, bottom = bottomGap)
                 .offset {
                     IntOffset(
                         state.miniDx.roundToInt(),
                         state.miniDy.roundToInt(),
                     )
                 }
-                .pointerInput(Unit) {
+                .pointerInput(compact, safeBottom) {
                     detectDragGestures { change, drag ->
                         change.consume()
                         val nx = (state.miniDx + drag.x).coerceIn(-(maxX - pillW - margin * 2), 0f)
-                        val ny = (state.miniDy + drag.y).coerceIn(-(maxY - pillH - margin * 2), 0f)
+                        val ny = (state.miniDy + drag.y).coerceIn(-(maxY - pillH - bottomGapPx), 0f)
                         state.miniDx = nx
                         state.miniDy = ny
                     }

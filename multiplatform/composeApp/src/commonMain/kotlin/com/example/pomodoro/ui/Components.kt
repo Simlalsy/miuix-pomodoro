@@ -55,11 +55,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import com.example.pomodoro.AppTheme
 import com.example.pomodoro.AppColors
 import com.example.pomodoro.CardGlass
 import com.example.pomodoro.LocalCardGlass
+import com.example.pomodoro.LocalCompact
+import com.example.pomodoro.LocalScreenWidth
 import com.example.pomodoro.W
 import com.example.pomodoro.auroraBackdrop
 import com.example.pomodoro.latinLine
@@ -119,7 +122,7 @@ private fun glassSurface(level: Int): Color {
  * [blurRadius] 是高斯 σ（CSS blur-radius 的一半）。
  */
 @Composable
-private fun RoundedShadow(
+internal fun RoundedShadow(
     modifier: Modifier,
     color: Color,
     cornerRadius: Dp,
@@ -171,29 +174,33 @@ fun Symbol(name: String, size: Dp, color: Color, modifier: Modifier = Modifier) 
 @Composable
 fun CardBox(
     modifier: Modifier = Modifier,
-    padding: Dp = 26.dp,
-    radius: Dp = 20.dp,
+    padding: Dp = Dp.Unspecified,
+    radius: Dp = Dp.Unspecified,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     val c = AppTheme.colors
+    val compact = LocalCompact.current
+    // 网页 .card：桌面 padding 26 / radius 20；窄屏 20 / 18
+    val pad = if (padding.isSpecified) padding else if (compact) 20.dp else 26.dp
+    val rad = if (radius.isSpecified) radius else if (compact) 18.dp else 20.dp
     // [data-bg-active]：卡片底色 52%、描边 70%（对应网页 .card）
     val cardBg = glassDim(c.container, 0.52f)
     // 先算好卡片的 modifier：此时还未提供 LocalCardGlass，卡片自身不会重复叠底色
     val cardModifier = Modifier
-        .clip(RoundedCornerShape(radius))
+        .clip(RoundedCornerShape(rad))
         // 网页 [data-theme=aurora] .card backdrop-filter: blur(16px) saturate(1.5)
         .auroraBackdrop(1.5f)
         .background(cardBg)
-        .border(1.dp, glassDim(c.divider, 0.70f), RoundedCornerShape(radius))
+        .border(1.dp, glassDim(c.divider, 0.70f), RoundedCornerShape(rad))
         // 网页 .card 是 border-box：1px 边框占掉内边距（内容整体 +1）
-        .padding(padding + 1.dp)
+        .padding(pad + 1.dp)
     Box(modifier) {
         // 网页 .card box-shadow：极光 0 12px 36px rgba(0,0,0,.32)、其余 0 8px 24px。
         // Modifier.shadow 无偏移且强度不足（实测几乎不可见），用自绘阴影复刻。
         RoundedShadow(
             modifier = Modifier.matchParentSize(),
             color = c.shadow,
-            cornerRadius = radius,
+            cornerRadius = rad,
             offsetY = if (c.aurora) 12.dp else 8.dp,
             // CSS blur-radius 是 2σ：36px→σ18、24px→σ12
             blurRadius = if (c.aurora) 18.dp else 12.dp,
@@ -210,7 +217,7 @@ fun CardBox(
 @Composable
 fun CardTitle(strong: String, rest: String, modifier: Modifier = Modifier) {
     val c = AppTheme.colors
-    Row(modifier) {
+    Row(modifier.height(19.dp)) {
         Text(strong, color = c.onSurface, fontFamily = AppTheme.font, fontSize = 15.sp, lineHeight = normalLine(15), fontWeight = W.bold, letterSpacing = 0.2.sp)
         Text(rest, color = c.variant, fontFamily = AppTheme.font, fontSize = 15.sp, lineHeight = normalLine(15), fontWeight = W.bold, letterSpacing = 0.2.sp)
     }
@@ -225,6 +232,8 @@ fun Segment(
     onSelect: (Int) -> Unit,
 ) {
     val c = AppTheme.colors
+    // 网页 @media(max-width:360px)：.segment button padding 9px 8px / font-size 13px
+    val narrow = LocalScreenWidth.current <= 360.dp
     Row(
         modifier
             .clip(RoundedCornerShape(16.dp))
@@ -278,10 +287,13 @@ fun Segment(
                         label,
                         color = fg,
                         fontFamily = AppTheme.font,
-                        fontSize = 14.sp,
-                        lineHeight = normalLine(14),
+                        fontSize = (if (narrow) 13 else 14).sp,
+                        lineHeight = normalLine(if (narrow) 13 else 14),
                         fontWeight = W.semi,
-                        modifier = Modifier.padding(vertical = 10.dp),
+                        modifier = Modifier
+                            .padding(vertical = if (narrow) 9.dp else 10.dp)
+                            // 钉住行盒：13sp 行盒在 Skia 下会多出 0.5dp，窄屏会把胶囊撑高 1px
+                            .height(if (narrow) 16.dp else 18.dp),
                     )
                 }
             }
@@ -358,7 +370,7 @@ fun AppSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
 
 /** 无文字图标按钮（顶栏/背景）：44×44 radius 14 */
 @Composable
-fun IconBtn(icon: String, size: Dp = 44.dp, iconSize: Dp = 22.dp, tint: Color? = null, bg: Color = Color.Transparent, onClick: () -> Unit) {
+fun IconBtn(icon: String, size: Dp = 44.dp, iconSize: Dp = 24.dp, tint: Color? = null, bg: Color = Color.Transparent, onClick: () -> Unit) {
     val c = AppTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -434,6 +446,10 @@ fun PrimaryButton(
     onClick: () -> Unit,
 ) {
     val c = AppTheme.colors
+    val compact = LocalCompact.current
+    // 网页窄屏 .btn-primary：height 56 / padding 0 26
+    val h = if (compact && height == 60.dp) 56.dp else height
+    val hp = if (compact && paddingHorizontal == 34.dp) 26.dp else paddingHorizontal
     val bg by animateColorAsState(if (running) c.containerHigh else c.primary, tween(300))
     val fg by animateColorAsState(if (running) c.onSurface else c.onPrimary, tween(300))
     val interaction = remember { MutableInteractionSource() }
@@ -441,7 +457,7 @@ fun PrimaryButton(
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(dampingRatio = 0.5f, stiffness = 600f))
     // 网页 .btn-primary box-shadow: 0 10px 24px primary@35%（仅向下偏移，无环境光）；
     // Compose 的 Modifier.shadow 会带 ambient（四周都有），用偏移+模糊层精确复刻
-    Box(Modifier.height(height).scale(scale)) {
+    Box(Modifier.height(h).scale(scale)) {
         if (!running) {
             Box(
                 Modifier.matchParentSize().offset(y = 10.dp).blur(12.dp, BlurredEdgeTreatment.Unbounded)
@@ -450,11 +466,11 @@ fun PrimaryButton(
         }
         Row(
             Modifier
-                .height(height)
+                .height(h)
                 .clip(RoundedCornerShape(18.dp))
                 .background(bg)
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-                .padding(horizontal = paddingHorizontal),
+                .padding(horizontal = hp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -471,6 +487,8 @@ fun PrimaryButton(
 @Composable
 fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
     val c = AppTheme.colors
+    // 网页 @media(max-width:360px)：.stat-cell padding 14 / .val 24px
+    val narrow = LocalScreenWidth.current <= 360.dp
     Column(
         modifier
             .clip(RoundedCornerShape(16.dp))
@@ -480,11 +498,30 @@ fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
             .background(glassDim(c.surface, 0.52f))
             .border(1.dp, c.divider, RoundedCornerShape(16.dp))
             // 网页 .stat-cell 是 border-box：1px 边框占掉内边距（内容从 +1 开始）
-            .padding(horizontal = 19.dp, vertical = 21.dp),
+            .padding(
+                horizontal = if (narrow) 15.dp else 19.dp,
+                vertical = if (narrow) 15.dp else 21.dp,
+            ),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(value, color = c.primary, fontFamily = AppTheme.font, fontSize = 28.sp, lineHeight = latinLine(28), fontWeight = W.extra)
-        Text(label, color = c.variant, fontFamily = AppTheme.font, fontSize = 13.sp, lineHeight = normalLine(13), fontWeight = W.semi)
+        Text(
+            value,
+            color = c.primary,
+            fontFamily = AppTheme.font,
+            fontSize = (if (narrow) 24 else 28).sp,
+            lineHeight = latinLine(if (narrow) 24 else 28),
+            fontWeight = W.extra,
+        )
+        // 钉住行盒：Skia 会把行高按整数像素向上取整，单元格会比网页高 0.5dp
+        Text(
+            label,
+            color = c.variant,
+            fontFamily = AppTheme.font,
+            fontSize = 13.sp,
+            lineHeight = normalLine(13),
+            fontWeight = W.semi,
+            modifier = Modifier.height(16.dp),
+        )
     }
 }
 
@@ -507,7 +544,8 @@ fun SettingRow(
                 Box(
                     Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(c.soft),
                     contentAlignment = Alignment.Center,
-                ) { Symbol(icon, 22.dp, c.primary) }
+                // 网页 .setting-ico 内没有 .material-symbols-rounded 的 font-size 覆盖 → 仍为 24px
+                ) { Symbol(icon, 24.dp, c.primary) }
                 Spacer(Modifier.width(14.dp))
                 Column {
                     Text(name, color = c.onSurface, fontFamily = AppTheme.font, fontSize = 15.sp, lineHeight = normalLine(15), fontWeight = W.bold)

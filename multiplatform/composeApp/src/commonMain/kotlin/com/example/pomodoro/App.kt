@@ -19,16 +19,21 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -41,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,6 +82,7 @@ import androidx.compose.runtime.compositionLocalOf
 import com.example.pomodoro.ui.AboutPage
 import com.example.pomodoro.ui.IconBtn
 import com.example.pomodoro.ui.MiniTimerOverlay
+import com.example.pomodoro.ui.RoundedShadow
 import com.example.pomodoro.ui.SettingsPage
 import com.example.pomodoro.ui.SplashScreen
 import com.example.pomodoro.ui.Symbol
@@ -142,7 +149,11 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
                 }
                 AuroraFieldSpec(image)
             } else null
-            CompositionLocalProvider(LocalAuroraField provides auroraSpec) {
+            CompositionLocalProvider(
+                LocalAuroraField provides auroraSpec,
+                LocalCompact provides compact,
+                LocalScreenWidth provides maxWidth,
+            ) {
             if (auroraSpec != null) AuroraBackground(auroraSpec)
             // 自定义背景图（对应网页 #bgImage：盖在极光层之上、内容之下）
             state.bgImage?.let { BackgroundImageLayer(it) }
@@ -231,6 +242,12 @@ private fun rememberAuroraDrift(): Triple<Float, Float, Float> {
 class AuroraFieldSpec(val image: ImageBitmap)
 
 val LocalAuroraField = compositionLocalOf<AuroraFieldSpec?> { null }
+
+/** 窄屏（<760dp，对应网页 @media max-width:760px）：底部导航 + 更紧凑的间距 */
+val LocalCompact = staticCompositionLocalOf { false }
+
+/** 视口宽度（dp），用于 clamp(230px, 62vw, 300px) 这类按视口计算的尺寸 */
+val LocalScreenWidth = staticCompositionLocalOf { 1280.dp }
 
 /**
  * 卡片毛玻璃信息：[color] 是卡片自身底色，[saturation] 是卡片 backdrop-filter 的增艳倍数。
@@ -428,13 +445,24 @@ private fun RailLeft(state: State) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {        Page.entries.forEach { p -> RailItem(p, state.page == p, Modifier.width(64.dp)) { state.page = p } }
         Spacer(Modifier.weight(1f))
-        Box(
-            Modifier
-                .size(56.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(c.primary),
-            contentAlignment = Alignment.Center,
-        ) { Symbol("eco", 28.dp, c.onPrimary) }
+        Box(Modifier.size(56.dp)) {
+            // 网页 .rail-brand box-shadow: var(--miuix-shadow)
+            RoundedShadow(
+                modifier = Modifier.matchParentSize(),
+                color = c.shadow,
+                cornerRadius = 16.dp,
+                offsetY = if (c.aurora) 12.dp else 8.dp,
+                blurRadius = if (c.aurora) 18.dp else 12.dp,
+            )
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(c.primary),
+                contentAlignment = Alignment.Center,
+            // 网页 .material-symbols-rounded 的基础 font-size:24px 会覆盖 .rail-brand 的 28px
+            ) { Symbol("eco", 24.dp, c.onPrimary) }
+        }
     }
 }
 
@@ -442,15 +470,30 @@ private fun RailLeft(state: State) {
 @Composable
 private fun RailBottom(state: State) {
     val c = AppTheme.colors
+    // 网页窄屏 .rail：flex:1 + max-width:80 + gap:6 + justify-content:space-around。
+    // 按视口宽度复刻：条目宽 min(80, (W-3·6)/4)，剩余空间四等分（两端各占 1/8，条目间再均分）。
+    val screenW = LocalScreenWidth.current
+    val itemW = ((screenW - 18.dp) / 4).coerceAtMost(80.dp)
+    val leftover = (screenW - itemW * 4 - 18.dp).coerceAtLeast(0.dp)
     Row(
         Modifier
             .fillMaxWidth()
+            // 网页窄屏 .rail backdrop-filter: blur(22px) saturate(1.7)
+            .auroraBackdrop(1.7f)
             .background(c.surface.copy(alpha = c.surface.alpha * 0.55f))
-            .padding(vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
+            .drawBehind {
+                val line = 1.dp.toPx()
+                // border-top: 1px divider + box-shadow: inset 0 1px rgba(255,255,255,.06)
+                drawRect(c.divider, size = Size(size.width, line))
+                drawRect(Color.White.copy(alpha = 0.06f), topLeft = Offset(0f, line), size = Size(size.width, line))
+            }
+            // 网页 .rail 底部内边距含 safe-area-inset-bottom
+            .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom))
+            .padding(top = 7.dp, bottom = 6.dp, start = leftover / 8, end = leftover / 8),
+        horizontalArrangement = Arrangement.spacedBy(6.dp + leftover / 4),
     ) {
         Page.entries.forEach { p ->
-            Box(Modifier.weight(1f)) { RailItem(p, state.page == p, Modifier.fillMaxWidth()) { state.page = p } }
+            RailItem(p, state.page == p, Modifier.width(itemW)) { state.page = p }
         }
     }
 }
@@ -458,13 +501,15 @@ private fun RailBottom(state: State) {
 @Composable
 private fun RailItem(page: Page, active: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val c = AppTheme.colors
+    val compact = LocalCompact.current
     Column(
         modifier
             .widthIn(max = 80.dp)
-            .clip(RoundedCornerShape(16.dp))
+            // 网页窄屏 .rail-item：padding 8 / radius 14
+            .clip(RoundedCornerShape(if (compact) 14.dp else 16.dp))
             .background(if (active) c.soft else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
+            .padding(vertical = if (compact) 8.dp else 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.scale(if (active) 1.14f else 1f)) {
@@ -479,6 +524,7 @@ private fun RailItem(page: Page, active: Boolean, modifier: Modifier = Modifier,
 @Composable
 private fun MainColumn(state: State, modifier: Modifier = Modifier) {
     val c = AppTheme.colors
+    val compact = LocalCompact.current
     Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxHeight().widthIn(max = 760.dp)) {
             Topbar(state)
@@ -492,7 +538,13 @@ private fun MainColumn(state: State, modifier: Modifier = Modifier) {
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(start = 28.dp, end = 28.dp, top = 24.dp, bottom = 48.dp)
+                    // 网页 .content：24/28/48；窄屏 18/16/32
+                    .padding(
+                        start = if (compact) 16.dp else 28.dp,
+                        end = if (compact) 16.dp else 28.dp,
+                        top = if (compact) 18.dp else 24.dp,
+                        bottom = if (compact) 32.dp else 48.dp,
+                    )
                     .graphicsLayer {
                         alpha = anim.value
                         translationY = (1f - anim.value) * 10.dp.toPx()
@@ -501,7 +553,7 @@ private fun MainColumn(state: State, modifier: Modifier = Modifier) {
                     },
             ) {
                 when (state.page) {
-                    Page.Timer -> TimerPage(state, compact = false)
+                    Page.Timer -> TimerPage(state, compact = compact)
                     Page.Stats -> StatsPage(state)
                     Page.Todos -> TodosPage(state)
                     Page.Settings -> SettingsPage(state)
@@ -515,6 +567,9 @@ private fun MainColumn(state: State, modifier: Modifier = Modifier) {
 @Composable
 private fun Topbar(state: State) {
     val c = AppTheme.colors
+    val compact = LocalCompact.current
+    // 网页 @media(max-width:360px)：标题 22px
+    val narrow = LocalScreenWidth.current <= 360.dp
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier
@@ -522,13 +577,31 @@ private fun Topbar(state: State) {
                 // 网页 .topbar backdrop-filter: blur(24px) saturate(1.8)
                 .auroraBackdrop(1.8f)
                 .background(c.background.copy(alpha = 0.52f))
-                // 网页 .topbar 是 border-box：1px border-bottom 吃掉底部内边距 → 14-1=13（否则下方内容整体低 1px）
-                .padding(start = 28.dp, end = 28.dp, top = 22.dp, bottom = 13.dp),
+                // 网页 .topbar 内边距含 safe-area-inset-top；背景仍铺满状态栏下方
+                .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
+                // 网页 .topbar 是 border-box：1px border-bottom 吃掉底部内边距
+                // 桌面 22/28/14 → 13；窄屏 14/18/10 → 9
+                .padding(
+                    start = if (compact) 18.dp else 28.dp,
+                    end = if (compact) 18.dp else 28.dp,
+                    top = if (compact) 14.dp else 22.dp,
+                    bottom = if (compact) 9.dp else 13.dp,
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Column(Modifier.weight(1f)) {
-                Text(state.page.title, color = c.onSurface, fontFamily = AppTheme.font, fontSize = 26.sp, lineHeight = normalLine(26), fontWeight = W.extra, letterSpacing = (-0.5).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    state.page.title,
+                    color = c.onSurface,
+                    fontFamily = AppTheme.font,
+                    fontSize = (if (narrow) 22 else 26).sp,
+                    lineHeight = normalLine(if (narrow) 22 else 26),
+                    fontWeight = W.extra,
+                    letterSpacing = (-0.5).sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Spacer(Modifier.height(2.dp))
                 Text(state.page.subtitle, color = c.variant, fontFamily = AppTheme.font, fontSize = 13.sp, lineHeight = normalLine(13))
             }

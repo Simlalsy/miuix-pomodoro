@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -58,12 +61,15 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pomodoro.AppTheme
 import com.example.pomodoro.KEY_COLORS
+import com.example.pomodoro.LocalCompact
+import com.example.pomodoro.LocalScreenWidth
 import com.example.pomodoro.State
 import com.example.pomodoro.TONES
 import com.example.pomodoro.TimerMode
@@ -99,14 +105,32 @@ fun TimerPage(state: State, compact: Boolean = false) {
 @Composable
 private fun TimerCard(state: State) {
     val scope = rememberCoroutineScope()
+    val compact = LocalCompact.current
+    val screenW = LocalScreenWidth.current
+    val narrow = screenW <= 360.dp
+    // 网页 .timer-ring：clamp(230px, 62vw, 300px)；@media(max-width:360px) 为 clamp(190, 58vw, 260)
+    val ringSize = if (narrow) {
+        (screenW * 0.58f).coerceIn(190.dp, 260.dp)
+    } else {
+        (screenW * 0.62f).coerceIn(230.dp, 300.dp)
+    }
     CardBox(padding = 0.dp) {
         Column(
-            Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 34.dp, bottom = 30.dp),
+            Modifier.fillMaxWidth().padding(
+                start = if (compact) 20.dp else 24.dp,
+                end = if (compact) 20.dp else 24.dp,
+                top = if (compact) 20.dp else 34.dp,
+                bottom = if (compact) 20.dp else 30.dp,
+            ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            TimerRing(state, 300.dp)
+            TimerRing(state, ringSize)
             Spacer(Modifier.height(32.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                // 网页 @media(max-width:360px)：.controls gap 10
+                horizontalArrangement = Arrangement.spacedBy(if (narrow) 10.dp else 18.dp),
+            ) {
                 GhostButton("replay") { state.reset() }
                 PrimaryButton(
                     text = if (state.running) "暂停" else "开始",
@@ -198,7 +222,12 @@ private fun TimerRing(state: State, size: Dp) {
                     .clip(CircleShape)
                     .background(c.primary.copy(alpha = if (state.running) 1f else 0f)),
             )
-            val timeSize = (size.value * 0.213f).coerceIn(44f, 64f)
+            // 网页 .timer-time：clamp(44px, 13vw, 64px)；窄屏按 vw，桌面沿用环尺寸比例
+            val timeSize = if (LocalCompact.current) {
+                (LocalScreenWidth.current.value * 0.13f).coerceIn(44f, 64f)
+            } else {
+                (size.value * 0.213f).coerceIn(44f, 64f)
+            }
             // CSS line-height:1（行盒 = 字号）：浏览器把负半行距 (fontLine-height)/2 放在盒子上边缘之外，
             // 基线 = ascent - 半行距；Compose 直接把基线放在 ascent 处 —— 差一个半行距，这里手动补回。
             // Inter 度量：(1984+494)/2048 = 1.20996 → 半行距 = 0.10498em
@@ -212,7 +241,7 @@ private fun TimerRing(state: State, size: Dp) {
                     lineHeight = timeSize.sp,
                     fontWeight = W.extra,
                     letterSpacing = (-2).sp,
-                    modifier = Modifier.offset(y = (-halfGap).dp),
+                    modifier = Modifier.offset(y = (-halfGap - 0.5f).dp),
                     style = TextStyle(fontFeatureSettings = "tnum"),
                 )
             }
@@ -258,21 +287,25 @@ fun StatsPage(state: State) {
         CardBox {
             CardTitle("今日", " 专注")
             Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                StatCell("${today.sessions}", "完成番茄", Modifier.weight(1f))
-                StatCell("${today.focusMin}", "专注分钟", Modifier.weight(1f))
-                StatCell("${today.best}", "最长连续", Modifier.weight(1f))
-            }
+            StatGrid(
+                listOf(
+                    "${today.sessions}" to "完成番茄",
+                    "${today.focusMin}" to "专注分钟",
+                    "${today.best}" to "最长连续",
+                ),
+            )
         }
         Spacer(Modifier.height(32.dp))
         CardBox {
             CardTitle("累计", " 专注")
             Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                StatCell("${state.totalSessions}", "累计番茄", Modifier.weight(1f))
-                StatCell("${state.totalHours}", "累计小时", Modifier.weight(1f))
-                StatCell("${state.activeDays}", "专注天数", Modifier.weight(1f))
-            }
+            StatGrid(
+                listOf(
+                    "${state.totalSessions}" to "累计番茄",
+                    state.totalHours to "累计小时",
+                    "${state.activeDays}" to "专注天数",
+                ),
+            )
             Spacer(Modifier.height(18.dp))
             GhostLabel("download", "导出数据") { state.showToast("数据已导出", "download") }
         }
@@ -281,6 +314,20 @@ fun StatsPage(state: State) {
             CardTitle("本周", " 分布")
             Spacer(Modifier.height(20.dp))
             WeekChart(state)
+        }
+    }
+}
+
+/** 网页 .stats-grid：桌面 3 列，窄屏 1 列（间隔 16） */
+@Composable
+private fun StatGrid(items: List<Pair<String, String>>) {
+    if (LocalCompact.current) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            items.forEach { (value, label) -> StatCell(value, label, Modifier.fillMaxWidth()) }
+        }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            items.forEach { (value, label) -> StatCell(value, label, Modifier.weight(1f)) }
         }
     }
 }
@@ -370,12 +417,13 @@ fun TodosPage(state: State) {
                 textStyle = TextStyle(color = c.onSurface, fontSize = 14.sp, lineHeight = normalLine(14), fontFamily = AppTheme.font),
                 modifier = Modifier.weight(1f),
                 decorationBox = { inner ->
-                    // .bg-input：padding 12/14 + 1px divider 描边 + radius 14；border-box → 内容从 13/15 开始
+                    // .bg-input：border-box 高 46（padding 12/14 + 1px 描边 + 20px 行盒）
                     Box(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.containerHigh).border(1.dp, c.divider, RoundedCornerShape(14.dp)).padding(horizontal = 15.dp, vertical = 13.dp),
+                        Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(14.dp)).background(c.containerHigh).border(1.dp, c.divider, RoundedCornerShape(14.dp)).padding(horizontal = 15.dp, vertical = 13.dp),
                         contentAlignment = Alignment.CenterStart,
                     ) {
-                        if (input.isEmpty()) Text("添加一个待办，回车确认...", color = c.variant, fontFamily = AppTheme.font, fontSize = 14.sp, lineHeight = normalLine(14))
+                        // 网页是 <input>：占位符永远单行，不会把输入框撑高
+                        if (input.isEmpty()) Text("添加一个待办，回车确认...", color = c.variant, fontFamily = AppTheme.font, fontSize = 14.sp, lineHeight = normalLine(14), maxLines = 1, softWrap = false)
                         inner()
                     }
                 },
@@ -387,17 +435,16 @@ fun TodosPage(state: State) {
         }
         Spacer(Modifier.height(14.dp))
         val doneCount = state.todos.count { it.done }
-        if (state.todos.isNotEmpty()) {
-            Row(Modifier.padding(start = 2.dp)) {
-                Text("已完成 $doneCount / ${state.todos.size}", color = c.variant, fontFamily = AppTheme.font, fontSize = 13.sp, lineHeight = normalLine(13), fontWeight = W.semi)
-            }
-        }
-        Spacer(Modifier.height(6.dp))
         if (state.todos.isEmpty()) {
+            // 网页空态：.todo-stats 为空且高度 0，上下 margin 折叠 → 只留 14
             Box(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
                 Text("暂无待办，添加一个开始吧 ✨", color = c.variant, fontFamily = AppTheme.font, fontSize = 14.sp, lineHeight = normalLine(14))
             }
         } else {
+            Row(Modifier.padding(start = 2.dp)) {
+                Text("已完成 $doneCount / ${state.todos.size}", color = c.variant, fontFamily = AppTheme.font, fontSize = 13.sp, lineHeight = normalLine(13), fontWeight = W.semi)
+            }
+            Spacer(Modifier.height(6.dp))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 state.todos.forEachIndexed { index, todo ->
                     TodoRow(todo, onToggle = { state.toggleTodo(index) }, onDelete = { state.removeTodo(index) })
@@ -611,10 +658,14 @@ fun AboutPage(state: State, onClose: () -> Unit) {
         listOf(Color(0xFFFFE3F1), Color(0xFFF0E7FD), Color(0xFFDCD7FA))
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        // 网页 .about 的上下内边距含 safe-area-inset-*；背景渐变铺满整屏
+        val safe = WindowInsets.systemBars.asPaddingValues()
+        val safeTop = safe.calculateTopPadding()
+        val safeBottom = safe.calculateBottomPadding()
         // 复刻网页 flex 布局：内容总高固定（卡片 172+348+116 + 间距 48），
         // 主区 min-height 180、bottom padding 12；装不下时 logo（flex-shrink）被压缩
         val cardsTotal = 172f + 348f + 116f + 3f * 16f
-        val avail = maxHeight.value - 34f - 44f - cardsTotal
+        val avail = maxHeight.value - safeTop.value - safeBottom.value - 34f - 44f - cardsTotal
         val mainH = maxOf(180f, avail)
         val logoH = minOf(96f, mainH - 12f - 88f).coerceAtLeast(48f)
         Column(
@@ -638,7 +689,7 @@ fun AboutPage(state: State, onClose: () -> Unit) {
                 }
                 .verticalScroll(rememberScrollState()),
         ) {
-            Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 10.dp)) {
+            Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 10.dp + safeTop)) {
                 Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
                     Symbol("arrow_back", 24.dp, fg)
                 }
@@ -706,7 +757,7 @@ fun AboutPage(state: State, onClose: () -> Unit) {
                 Text("v1.0.0 (1)", color = fg.copy(alpha = 0.5f), fontFamily = AppTheme.font, fontSize = 14.sp, lineHeight = 17.sp, fontWeight = W.semi)
             }
             Spacer(Modifier.height(16.dp))
-            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp + safeBottom)) {
                 AboutCard(
                     dark,
                     listOf(
@@ -748,20 +799,51 @@ private data class AboutRow(val label: String, val value: String = "", val icon:
 private fun AboutCard(dark: Boolean, rows: List<AboutRow>) {
     val bg = if (dark) Color(0x17FFFFFF) else Color(0xB8FFFFFF)
     val fg = if (dark) Color(0xFFECE9FF) else Color(0xFF1B1633)
+    val compact = LocalCompact.current
+    // 网页 .about-item 是 flex：标签与地址按各自 max-content 宽度等比收缩。
+    // 窄屏用 TextMeasurer 量出两者宽度作为 weight，复刻浏览器逐行的换行位置。
+    val measurer = rememberTextMeasurer()
+    val labelStyle = TextStyle(fontFamily = AppTheme.font, fontSize = 16.sp, lineHeight = normalLine(16), fontWeight = W.bold)
+    val valueStyle = TextStyle(fontFamily = AppTheme.font, fontSize = 14.sp, lineHeight = 17.sp, fontWeight = W.semi)
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(bg)) {
         rows.forEach { row ->
             // 行高固定：无图标 36+20=56 / 有图标 36+22=58（网页 .about-item 的实测盒高）
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .height(if (row.icon == AboutIcon.None) 56.dp else 58.dp)
-                    .padding(horizontal = 20.dp),
+                if (compact) {
+                    // 窄屏允许标签/地址换行后自然撑高（网页 .about-item 无固定高度）
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = if (row.icon == AboutIcon.None) 56.dp else 58.dp)
+                        .padding(horizontal = 20.dp, vertical = 18.dp)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .height(if (row.icon == AboutIcon.None) 56.dp else 58.dp)
+                        .padding(horizontal = 20.dp)
+                },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(row.label, color = fg, fontFamily = AppTheme.font, fontSize = 16.sp, lineHeight = normalLine(16), fontWeight = W.bold, modifier = Modifier.weight(1f))
+                val labelW = if (compact) {
+                    measurer.measure(row.label, labelStyle).size.width.toFloat().coerceAtLeast(1f)
+                } else 1f
+                val valueW = if (compact && row.value.isNotEmpty()) {
+                    measurer.measure(row.value, valueStyle).size.width.toFloat().coerceAtLeast(1f)
+                } else 0f
+                Text(
+                    row.label,
+                    color = fg,
+                    style = labelStyle,
+                    modifier = Modifier.weight(labelW),
+                )
                 if (row.value.isNotEmpty()) {
-                    Text(row.value, color = fg.copy(alpha = 0.55f), fontFamily = AppTheme.font, fontSize = 14.sp, lineHeight = 17.sp, fontWeight = W.semi, textAlign = TextAlign.End)
+                    Text(
+                        row.value,
+                        color = fg.copy(alpha = 0.55f),
+                        style = valueStyle,
+                        textAlign = TextAlign.End,
+                        modifier = if (compact) Modifier.weight(valueW) else Modifier,
+                    )
                 }
                 when (row.icon) {
                     AboutIcon.None -> {}

@@ -98,8 +98,8 @@ data class ToastMsg(val text: String, val icon: String = "check")
 enum class Page(val id: String, val label: String, val icon: String, val title: String, val subtitle: String) {
     Timer("timer", "计时", "timer", "番茄钟", "专注每一刻"),
     Stats("stats", "统计", "monitoring", "统计", "你的专注足迹"),
-    Todos("todos", "待办", "checklist", "待办", "今天要做的事"),
-    Settings("settings", "设置", "settings", "设置", "偏好与外观"),
+    Todos("todos", "待办", "checklist", "待办", "记录你的任务"),
+    Settings("settings", "设置", "settings", "设置", "自定义你的节奏"),
 }
 
 const val TONE_CUSTOM = "custom"
@@ -202,7 +202,11 @@ class State(private val storage: SettingsStorage = NoOpStorage) {
 
     val totalSessions: Int get() = days.values.sumOf { it.sessions }
     val totalFocusMin: Int get() = days.values.sumOf { it.focusMin }
-    val totalHours: Int get() = totalFocusMin / 60
+    /** 累计小时：网页 (totalFocus / 60).toFixed(1)，始终保留一位小数 */
+    val totalHours: String get() {
+        val tenths = (totalFocusMin * 10 + 30) / 60
+        return "${tenths / 10}.${tenths % 10}"
+    }
     val activeDays: Int get() = days.count { it.value.sessions > 0 }
 
     /* ================= 计时行为 ================= */
