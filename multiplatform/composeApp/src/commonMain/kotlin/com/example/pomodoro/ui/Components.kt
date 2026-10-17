@@ -114,6 +114,38 @@ private fun glassSurface(level: Int): Color {
     return glassDim(base, pct)
 }
 
+/**
+ * CSS `box-shadow` 复刻：向下偏移 + 高斯模糊 + 挖掉元素本体（box-shadow 不画进 border box）。
+ * [blurRadius] 是高斯 σ（CSS blur-radius 的一半）。
+ */
+@Composable
+private fun RoundedShadow(
+    modifier: Modifier,
+    color: Color,
+    cornerRadius: Dp,
+    offsetY: Dp,
+    blurRadius: Dp,
+) {
+    Box(
+        modifier
+            .drawWithContent {
+                val hole = Path().apply {
+                    addRoundRect(
+                        RoundRect(
+                            Rect(0f, 0f, size.width, size.height),
+                            CornerRadius(cornerRadius.toPx()),
+                        ),
+                    )
+                }
+                clipPath(hole, ClipOp.Difference) {
+                    translate(0f, offsetY.toPx()) { this@drawWithContent.drawContent() }
+                }
+            }
+            .blur(blurRadius, BlurredEdgeTreatment.Unbounded)
+            .background(color, RoundedCornerShape(cornerRadius)),
+    )
+}
+
 /** 图标（Material Symbols Rounded 字形，与网页同字体同设置） */
 @Composable
 fun Symbol(name: String, size: Dp, color: Color, modifier: Modifier = Modifier) {
@@ -157,27 +189,14 @@ fun CardBox(
         .padding(padding + 1.dp)
     Box(modifier) {
         // 网页 .card box-shadow：极光 0 12px 36px rgba(0,0,0,.32)、其余 0 8px 24px。
-        // Modifier.shadow 无偏移且强度不足（实测几乎不可见），改为「偏移 + 高斯模糊 + 挖掉卡片本体」。
-        Box(
-            Modifier
-                .matchParentSize()
-                .drawWithContent {
-                    // CSS box-shadow 不画在 border box 内：先模糊，再把卡片形状挖掉
-                    val r = radius.toPx()
-                    val hole = Path().apply {
-                        addRoundRect(
-                            RoundRect(Rect(0f, 0f, size.width, size.height), CornerRadius(r)),
-                        )
-                    }
-                    clipPath(hole, ClipOp.Difference) {
-                        translate(0f, (if (c.aurora) 12.dp else 8.dp).toPx()) {
-                            this@drawWithContent.drawContent()
-                        }
-                    }
-                }
-                // CSS blur-radius 是 2σ：36px→σ18、24px→σ12
-                .blur(if (c.aurora) 18.dp else 12.dp, BlurredEdgeTreatment.Unbounded)
-                .background(c.shadow, RoundedCornerShape(radius)),
+        // Modifier.shadow 无偏移且强度不足（实测几乎不可见），用自绘阴影复刻。
+        RoundedShadow(
+            modifier = Modifier.matchParentSize(),
+            color = c.shadow,
+            cornerRadius = radius,
+            offsetY = if (c.aurora) 12.dp else 8.dp,
+            // CSS blur-radius 是 2σ：36px→σ18、24px→σ12
+            blurRadius = if (c.aurora) 18.dp else 12.dp,
         )
         CompositionLocalProvider(
             LocalCardGlass provides if (c.aurora) CardGlass(cardBg, 1.5f) else null,
@@ -219,39 +238,52 @@ fun Segment(
             val active = i == selectedIndex
             val bg by animateColorAsState(if (active) glassSurface(2) else Color.Transparent, tween(350))
             val fg by animateColorAsState(if (active) c.onSurface else c.variant, tween(350))
-            Box(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(bg)
-                    .clickable { onSelect(i) },
-                contentAlignment = Alignment.Center,
-            ) {
-                // 选中态下方的主色条（growbar：从左向右 scaleX 展开）
-                // 注意：条要相对“按钮整个盒子”定位（同网页 ::before 的 absolute），
-                // 所以按钮的垂直 padding 放到文字上，别放在 Box 上（否则条会贴到内容盒底部=文字中线）
+            Box(Modifier.weight(1f)) {
+                // 网页 .segment button.active box-shadow：极光 0 2px 10px rgba(0,0,0,.28)、
+                // 其余主题 0 2px 8px rgba(0,0,0,.08)
                 if (active) {
-                    val p by animateFloatAsState(1f, spring(dampingRatio = 0.6f, stiffness = 500f))
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 6.dp)
-                            .fillMaxWidth(if (p <= 0f) 0.001f else 1f)
-                            .padding(horizontal = 12.dp)
-                            .height(3.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(c.primary),
+                    RoundedShadow(
+                        modifier = Modifier.matchParentSize(),
+                        color = Color.Black.copy(alpha = if (c.aurora) 0.28f else 0.08f),
+                        cornerRadius = 12.dp,
+                        offsetY = 2.dp,
+                        blurRadius = if (c.aurora) 5.dp else 4.dp,
                     )
                 }
-                Text(
-                    label,
-                    color = fg,
-                    fontFamily = AppTheme.font,
-                    fontSize = 14.sp,
-                    lineHeight = normalLine(14),
-                    fontWeight = W.semi,
-                    modifier = Modifier.padding(vertical = 10.dp),
-                )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(bg)
+                        .clickable { onSelect(i) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // 选中态下方的主色条（growbar：从左向右 scaleX 展开）
+                    // 注意：条要相对“按钮整个盒子”定位（同网页 ::before 的 absolute），
+                    // 所以按钮的垂直 padding 放到文字上，别放在 Box 上（否则条会贴到内容盒底部=文字中线）
+                    if (active) {
+                        val p by animateFloatAsState(1f, spring(dampingRatio = 0.6f, stiffness = 500f))
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 6.dp)
+                                .fillMaxWidth(if (p <= 0f) 0.001f else 1f)
+                                .padding(horizontal = 12.dp)
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(c.primary),
+                        )
+                    }
+                    Text(
+                        label,
+                        color = fg,
+                        fontFamily = AppTheme.font,
+                        fontSize = 14.sp,
+                        lineHeight = normalLine(14),
+                        fontWeight = W.semi,
+                        modifier = Modifier.padding(vertical = 10.dp),
+                    )
+                }
             }
         }
     }
