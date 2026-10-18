@@ -15,6 +15,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -71,6 +72,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -93,6 +95,7 @@ import com.example.pomodoro.TodoItem
 import com.example.pomodoro.W
 import com.example.pomodoro.accentColorOrNull
 import com.example.pomodoro.normalLine
+import com.example.pomodoro.openExternalUrl
 import com.example.pomodoro.requestNotificationPermission
 import kotlin.math.PI
 import kotlin.math.cos
@@ -909,14 +912,21 @@ fun AboutPage(state: State, onClose: () -> Unit) {
             }
             Spacer(Modifier.height(16.dp))
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp + safeBottom)) {
+                val onRow: (AboutRow) -> Unit = { row ->
+                    when {
+                        row.link != null -> openExternalUrl(row.link)
+                        row.modal != null -> state.aboutModal = row.modal
+                    }
+                }
                 Column(Modifier.graphicsLayer { translationY = (1f - cardUp.value) * 18.dp.toPx() }) {
                     AboutCard(
                         dark,
                         listOf(
                             AboutRow("应用版本", "v1.0.0 (1)", AboutIcon.None),
-                            AboutRow("设计参考", "MiuiX", AboutIcon.Chevron),
-                            AboutRow("我的 GitHub", "@Simlalsy", AboutIcon.External),
+                            AboutRow("设计参考", "MiuiX", AboutIcon.Chevron, modal = "miuix"),
+                            AboutRow("我的 GitHub", "@Simlalsy", AboutIcon.External, link = "https://github.com/Simlalsy"),
                         ),
+                        onRow = onRow,
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -924,13 +934,14 @@ fun AboutPage(state: State, onClose: () -> Unit) {
                     AboutCard(
                         dark,
                         listOf(
-                            AboutRow("MiuiX for Compose", "compose-miuix-ui/miuix", AboutIcon.External),
-                            AboutRow("Material Symbols", "google/material-design-icons", AboutIcon.External),
-                            AboutRow("Inter", "rsms/inter", AboutIcon.External),
-                            AboutRow("Jetpack Compose", "androidx/androidx", AboutIcon.External),
-                            AboutRow("Kotlin", "JetBrains/kotlin", AboutIcon.External),
-                            AboutRow("Gradle", "gradle/gradle", AboutIcon.External),
+                            AboutRow("MiuiX for Compose", "compose-miuix-ui/miuix", AboutIcon.External, link = "https://github.com/compose-miuix-ui/miuix"),
+                            AboutRow("Material Symbols", "google/material-design-icons", AboutIcon.External, link = "https://github.com/google/material-design-icons"),
+                            AboutRow("Inter", "rsms/inter", AboutIcon.External, link = "https://github.com/rsms/inter"),
+                            AboutRow("Jetpack Compose", "androidx/androidx", AboutIcon.External, link = "https://github.com/androidx/androidx"),
+                            AboutRow("Kotlin", "JetBrains/kotlin", AboutIcon.External, link = "https://github.com/JetBrains/kotlin"),
+                            AboutRow("Gradle", "gradle/gradle", AboutIcon.External, link = "https://github.com/gradle/gradle"),
                         ),
+                        onRow = onRow,
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -938,22 +949,127 @@ fun AboutPage(state: State, onClose: () -> Unit) {
                     AboutCard(
                         dark,
                         listOf(
-                            AboutRow("开源许可", "Apache-2.0", AboutIcon.Chevron),
-                            AboutRow("第三方许可", "", AboutIcon.Chevron),
+                            AboutRow("开源许可", "Apache-2.0", AboutIcon.Chevron, modal = "license"),
+                            AboutRow("第三方许可", "", AboutIcon.Chevron, modal = "third"),
                         ),
+                        onRow = onRow,
                     )
                 }
             }
         }
+
+        AboutModalHost(state, dark, maxHeight)
     }
 }
 
 private enum class AboutIcon { None, Chevron, External }
 
-private data class AboutRow(val label: String, val value: String = "", val icon: AboutIcon = AboutIcon.Chevron)
+/**
+ * 关于页弹窗（网页 `.about-modal`）：遮罩 rgba(0,0,0,.42) 0.25s `var(--ease)` 淡入，
+ * 卡片 max-width 430 / max-height 76vh / radius 22 / padding 22 / gap 14，
+ * scale .92→1 0.3s `var(--spring)`；点遮罩或「关闭」按钮收起。
+ */
+@Composable
+private fun AboutModalHost(state: State, dark: Boolean, maxHeight: androidx.compose.ui.unit.Dp) {
+    val c = AppTheme.colors
+    var shownKey by remember { mutableStateOf<String?>(null) }
+    val scrim = remember { Animatable(0f) }
+    val scale = remember { Animatable(0.92f) }
+    LaunchedEffect(state.aboutModal) {
+        val key = state.aboutModal
+        if (key != null) {
+            shownKey = key
+            launch { scrim.animateTo(1f, tween(250, easing = CssEase)) }
+            scale.snapTo(0.92f)
+            launch { scale.animateTo(1f, tween(300, easing = CssSpring)) }
+        } else if (shownKey != null) {
+            launch { scrim.animateTo(0f, tween(250, easing = CssEase)) }
+            scale.animateTo(0.92f, tween(300, easing = CssSpring))
+            shownKey = null
+        }
+    }
+    val key = shownKey ?: return
+    val text = ABOUT_MODALS[key] ?: return
+    val fg = if (dark) Color(0xFFECE9FF) else Color(0xFF1B1633)
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.42f * scrim.value))
+            .pointerInput(Unit) { detectTapGestures { state.aboutModal = null } }
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier
+                .widthIn(max = 430.dp)
+                .heightIn(max = maxHeight * 0.76f)
+                .graphicsLayer {
+                    scaleX = scale.value; scaleY = scale.value
+                }
+                // 卡片内点击不关闭（消费掉手势，避免冒泡到遮罩）
+                .pointerInput(Unit) { detectTapGestures { } }
+                .clip(RoundedCornerShape(22.dp))
+                .background(c.container)
+                .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(text.first, color = fg, fontFamily = AppTheme.font, fontSize = 17.sp, lineHeight = normalLine(17), fontWeight = W.extra)
+            Text(
+                text.second,
+                color = c.variant,
+                fontFamily = AppTheme.font,
+                fontSize = 13.sp,
+                lineHeight = 22.75.sp,
+                modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+            )
+            PrimaryButton(text = "关闭", height = 46.dp, fillWidth = true) { state.aboutModal = null }
+        }
+    }
+}
+
+private data class AboutRow(
+    val label: String,
+    val value: String = "",
+    val icon: AboutIcon = AboutIcon.Chevron,
+    /** 外链行：点击用系统浏览器打开（网页 .about-item[data-link] → openExternal()） */
+    val link: String? = null,
+    /** 弹窗行：点击打开许可/参考说明（网页 .about-item[data-about] → showAboutModal()） */
+    val modal: String? = null,
+)
+
+/** 对应网页 ABOUT_TEXTS（.about-modal 的标题与正文，正文保留换行） */
+private val ABOUT_MODALS = mapOf(
+    "miuix" to (
+        "设计参考" to
+            "界面与动效参考了 MiuiX for Compose 的设计语言：\n\n" +
+            "· 圆角分组卡片与设置项\n" +
+            "· 弹簧曲线（folmeSpring 手感）\n" +
+            "· 拖到边界时的拉伸回弹\n" +
+            "· 强调色跟随主题\n\n" +
+            "MiuiX for Compose\n" +
+            "github.com/compose-miuix-ui/miuix"
+        ),
+    "license" to (
+        "开源许可" to
+            "本应用以 Apache License 2.0 授权发布。\n\n" +
+            "在遵守该许可证的前提下，你可以自由使用、修改与分发。\n\n" +
+            "许可证全文：\nwww.apache.org/licenses/LICENSE-2.0\n\n" +
+            "除非适用法律要求或书面同意，软件按“原样”分发，不附带任何明示或暗示的担保。"
+        ),
+    "third" to (
+        "第三方许可" to
+            "· MiuiX for Compose — Apache-2.0\n" +
+            "  界面组件与设计规范\n\n" +
+            "· Material Symbols — Apache-2.0\n" +
+            "  图标字体（已内置，离线可用）\n\n" +
+            "· Inter — SIL Open Font License 1.1\n" +
+            "  数字与西文字体（已内置）"
+        ),
+)
 
 @Composable
-private fun AboutCard(dark: Boolean, rows: List<AboutRow>) {
+private fun AboutCard(dark: Boolean, rows: List<AboutRow>, onRow: (AboutRow) -> Unit = {}) {
     val bg = if (dark) Color(0x17FFFFFF) else Color(0xB8FFFFFF)
     val fg = if (dark) Color(0xFFECE9FF) else Color(0xFF1B1633)
     val compact = LocalCompact.current
@@ -964,6 +1080,14 @@ private fun AboutCard(dark: Boolean, rows: List<AboutRow>) {
     val valueStyle = TextStyle(fontFamily = AppTheme.font, fontSize = 14.sp, lineHeight = 17.sp, fontWeight = W.semi)
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(bg)) {
         rows.forEach { row ->
+            val action = row.link != null || row.modal != null
+            val rowInteraction = remember { MutableInteractionSource() }
+            val rowPressed by rowInteraction.collectIsPressedAsState()
+            // 网页 .about-item:active { background: rgba(0,0,0,.05) }；深色/极光 rgba(255,255,255,.06)
+            val activeBg by animateColorAsState(
+                if (rowPressed) (if (dark) Color(0x0FFFFFFF) else Color(0x0D000000)) else Color.Transparent,
+                tween(120),
+            )
             // 行高固定：无图标 36+20=56 / 有图标 36+22=58（网页 .about-item 的实测盒高）
             Row(
                 if (compact) {
@@ -971,11 +1095,15 @@ private fun AboutCard(dark: Boolean, rows: List<AboutRow>) {
                     Modifier
                         .fillMaxWidth()
                         .heightIn(min = if (row.icon == AboutIcon.None) 56.dp else 58.dp)
+                        .background(activeBg)
+                        .then(if (action) Modifier.clickable(interactionSource = rowInteraction, indication = null) { onRow(row) } else Modifier)
                         .padding(horizontal = 20.dp, vertical = 18.dp)
                 } else {
                     Modifier
                         .fillMaxWidth()
                         .height(if (row.icon == AboutIcon.None) 56.dp else 58.dp)
+                        .background(activeBg)
+                        .then(if (action) Modifier.clickable(interactionSource = rowInteraction, indication = null) { onRow(row) } else Modifier)
                         .padding(horizontal = 20.dp)
                 },
                 verticalAlignment = Alignment.CenterVertically,

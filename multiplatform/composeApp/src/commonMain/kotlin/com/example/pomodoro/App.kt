@@ -125,6 +125,10 @@ private val NavEase = CubicBezierEasing(0.4f, 1.2f, 0.95f, 0.97f)
 @Composable
 fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boolean = true) {
     val scope = rememberCoroutineScope()
+    // 安卓系统返回键：弹窗优先，其次关闭关于页
+    PlatformBackHandler(enabled = state.showAbout) {
+        if (state.aboutModal != null) state.aboutModal = null else state.showAbout = false
+    }
     PomodoroTheme(state.theme, isDark, state.accent, bgActive = state.bgActive) {
         val c = AppTheme.colors
         KeepScreenOn(enabled = state.running)
@@ -201,6 +205,9 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
                 }
             }
 
+            // 迷你计时器 z-index 40：低于关于页（45），高于底部导航（20）
+            if (state.miniVisible) MiniTimerOverlay(state)
+
             if (nav.value > 0f) {
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f * nav.value)))
                 Box(
@@ -212,9 +219,8 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
                 }
             }
 
+            // Toast z-index 50：盖在关于页之上
             ToastHost(state.toast)
-
-            if (state.miniVisible) MiniTimerOverlay(state)
 
             ThemeWashHost(state.theme, if (state.theme == "system") isDark else false, c.primary)
 

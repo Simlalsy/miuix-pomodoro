@@ -156,7 +156,9 @@ class State(private val storage: SettingsStorage = NoOpStorage) {
     /* ================= 界面状态 ================= */
     var page by mutableStateOf(Page.Timer)
     var showAbout by mutableStateOf(false)
-    var aboutModal by mutableStateOf<Pair<String, String>?>(null)
+
+    /** 关于页里的许可/设计参考弹窗 key（对应网页 .about-modal 的 miuix/license/third） */
+    var aboutModal by mutableStateOf<String?>(null)
     var toast by mutableStateOf<ToastMsg?>(null)
     var taskName by mutableStateOf(storage.loadString("taskName", ""))
 

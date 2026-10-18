@@ -585,6 +585,8 @@ fun PrimaryButton(
     height: Dp = 60.dp,
     fontSize: Int = 18,
     paddingHorizontal: Dp = 34.dp,
+    /** 撑满父宽（关于页弹窗的「关闭」按钮：网页是 flex 子项，默认 stretch） */
+    fillWidth: Boolean = false,
     onClick: () -> Unit,
 ) {
     val c = AppTheme.colors
@@ -615,7 +617,7 @@ fun PrimaryButton(
     }
     // 网页 .btn-primary box-shadow: 0 10px 24px primary@35%（仅向下偏移，无环境光）；
     // Compose 的 Modifier.shadow 会带 ambient（四周都有），用偏移+模糊层精确复刻
-    Box(Modifier.height(h).scale(scale)) {
+    Box(Modifier.height(h).then(if (fillWidth) Modifier.fillMaxWidth() else Modifier).scale(scale)) {
         if (!running) {
             Box(
                 Modifier.matchParentSize().offset(y = 10.dp).blur(12.dp, BlurredEdgeTreatment.Unbounded)
@@ -625,6 +627,7 @@ fun PrimaryButton(
         Row(
             Modifier
                 .height(h)
+                .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
                 .clip(RoundedCornerShape(18.dp))
                 .background(if (hoverBg == Color.Unspecified) bg else hoverBg)
                 .hoverable(interaction)

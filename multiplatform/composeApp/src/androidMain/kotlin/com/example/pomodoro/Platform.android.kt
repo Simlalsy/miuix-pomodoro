@@ -78,10 +78,25 @@ actual fun platformNotify(title: String, body: String) {
     runCatching { AndroidNotifier.notify(ctx, title, body) }
 }
 
+actual fun openExternalUrl(url: String) {
+    val ctx = MainActivity.current ?: MainActivity.appContext ?: return
+    runCatching {
+        ctx.startActivity(
+            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
+
 @Composable
 actual fun KeepScreenOn(enabled: Boolean) {
     val view = LocalView.current
     LaunchedEffect(enabled) { view.keepScreenOn = enabled }
+}
+
+@Composable
+actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
+    androidx.activity.compose.BackHandler(enabled = enabled, onBack = onBack)
 }
 
 @Composable

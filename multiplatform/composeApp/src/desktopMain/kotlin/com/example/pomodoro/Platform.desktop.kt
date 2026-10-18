@@ -84,8 +84,17 @@ actual fun platformNotify(title: String, body: String) {
     runCatching { icon.displayMessage(title, body, java.awt.TrayIcon.MessageType.NONE) }
 }
 
+actual fun openExternalUrl(url: String) {
+    runCatching {
+        if (java.awt.Desktop.isDesktopSupported()) java.awt.Desktop.getDesktop().browse(java.net.URI(url))
+    }
+}
+
 @Composable
 actual fun KeepScreenOn(enabled: Boolean) { /* Desktop no-op */ }
+
+@Composable
+actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) { /* Desktop/Esc handled by window */ }
 
 @Composable
 actual fun BlurBackdrop(show: Boolean) {

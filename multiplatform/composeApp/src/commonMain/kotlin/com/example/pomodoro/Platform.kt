@@ -11,6 +11,13 @@ expect fun KeepScreenOn(enabled: Boolean)
 @Composable
 expect fun BlurBackdrop(show: Boolean)
 
+/** 系统返回（仅 Android）：用于关闭关于页等浮层，返回 false 时交回系统 */
+@Composable
+expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
+
+/** 打开外部链接（关于页的外链行，对应网页 openExternal()） */
+expect fun openExternalUrl(url: String)
+
 expect fun startForegroundService(title: String, text: String)
 expect fun stopForegroundService()
 

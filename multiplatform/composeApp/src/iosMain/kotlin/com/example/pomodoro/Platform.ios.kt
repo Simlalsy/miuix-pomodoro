@@ -103,12 +103,21 @@ actual fun platformNotify(title: String, body: String) {
     UNUserNotificationCenter.currentNotificationCenter().addNotificationRequest(request, null)
 }
 
+@Suppress("DEPRECATION")
+actual fun openExternalUrl(url: String) {
+    val nsUrl = NSURL.URLWithString(url) ?: return
+    UIApplication.sharedApplication.openURL(nsUrl)
+}
+
 @Composable
 actual fun KeepScreenOn(enabled: Boolean) {
     LaunchedEffect(enabled) {
         UIApplication.sharedApplication.idleTimerDisabled = enabled
     }
 }
+
+@Composable
+actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) { /* iOS 无系统返回键 */ }
 
 @Composable
 actual fun BlurBackdrop(show: Boolean) {

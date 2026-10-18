@@ -202,6 +202,14 @@ node tools/webshot.js timer dark "%TEMP%\web-timer-dark.png" 393 852 2
   Android 用 `POST_NOTIFICATIONS` 运行时权限（发送走 `applicationContext`，Activity 回收后仍可发）；
   桌面用 `SystemTray` 气泡；iOS 用 `UNUserNotificationCenter`。完成时的文案与网页一致
   （专注完成/休息结束），跳过（`skip`）不发通知。
+- **关于页交互**：行按下时底色 `rgba(0,0,0,.05)`（深色/极光 `rgba(255,255,255,.06)`）；
+  外链行（我的 GitHub / 六个开源组件）用系统浏览器打开（`openExternalUrl`：Android `ACTION_VIEW`、
+  桌面 `Desktop.browse`、iOS `openURL`）；`设计参考`/`开源许可`/`第三方许可` 打开网页同款弹窗
+  （遮罩 `rgba(0,0,0,.42)` 0.25s `var(--ease)`、卡片 max-width 430 / max-height 76vh / radius 22 /
+  padding 22 / gap 14、scale .92→1 0.3s `var(--spring)`、点遮罩或「关闭」收起，正文逐字与网页一致）。
+- **层级与快捷键**：迷你计时器(40) 低于关于页(45)、Toast(50) 高于关于页、洗刷层(900) 最高；
+  桌面空格开始/暂停（输入框聚焦时由输入框消费）、依次 Esc 关弹窗→关关于页；
+  安卓返回键同样「弹窗 → 关于页」逐级关闭（`PlatformBackHandler`）。
 - **进度环发光**：CSS 是 `drop-shadow(0 0 10px primary@60%)`，原生改用同弧线 13dp 高斯模糊层
   （`Modifier.blur`，Android 12 以下为空操作）；环内环境光按 `radial-gradient(26% → transparent 70%,
 circle=最远角, opacity .5→.85)` 精确定参；截图时两边把呼吸动画冻结到同一基准相位
