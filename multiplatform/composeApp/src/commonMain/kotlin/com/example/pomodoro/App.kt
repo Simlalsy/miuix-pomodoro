@@ -129,9 +129,15 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
     PlatformBackHandler(enabled = state.showAbout) {
         if (state.aboutModal != null) state.aboutModal = null else state.showAbout = false
     }
+    // 与网页一致：安卓 WebView 版显式 setTextZoom(100)（不跟随系统字号）。
+    // 原生 sp 默认会跟随系统 fontScale，这里统一钉到 1，保证任何设备排版都与网页相同。
+    val baseDensity = LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides Density(baseDensity.density, fontScale = 1f)) {
     PomodoroTheme(state.theme, isDark, state.accent, bgActive = state.bgActive) {
         val c = AppTheme.colors
         KeepScreenOn(enabled = state.running)
+        // 系统栏图标明暗跟随页面主题（网页由 MiuixBridge.onThemeChanged 同步）
+        PlatformSystemBars(c.dark)
 
         // 背景图：启动与 bgUrl/bgMode 变化时（重新）加载（对应网页 applyBackground）
         LaunchedEffect(state.bgMode, state.bgUrl) { state.refreshBackgroundImage() }
@@ -176,6 +182,9 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
                 LocalAuroraField provides auroraSpec,
                 LocalCompact provides compact,
                 LocalScreenWidth provides maxWidth,
+                LocalScreenHeight provides maxHeight,
+                LocalShortScreen provides (maxHeight < 500.dp && maxWidth > maxHeight),
+                LocalTablet provides (maxWidth > 760.dp && maxWidth <= 1024.dp),
             ) {
             if (auroraSpec != null) AuroraBackground(auroraSpec)
             // 自定义背景图（对应网页 #bgImage：盖在极光层之上、内容之下）
@@ -235,6 +244,7 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
             }
         }
     }
+    }
 }
 
 /**
@@ -271,6 +281,15 @@ val LocalCompact = staticCompositionLocalOf { false }
 
 /** 视口宽度（dp），用于 clamp(230px, 62vw, 300px) 这类按视口计算的尺寸 */
 val LocalScreenWidth = staticCompositionLocalOf { 1280.dp }
+
+/** 视口高度（dp），用于 min(210px, 46vh) 这类按视口高计算的尺寸 */
+val LocalScreenHeight = staticCompositionLocalOf { 800.dp }
+
+/** 横屏矮屏（对应网页 @media (max-height:500px) and (orientation:landscape)） */
+val LocalShortScreen = staticCompositionLocalOf { false }
+
+/** 平板宽度 761–1024dp（对应网页 @media (min-width:761px) and (max-width:1024px)） */
+val LocalTablet = staticCompositionLocalOf { false }
 
 /** 页面/卡片入场进度：page = pageIn 0.35s，card = cardIn 0.5s（延迟 20ms），对应网页同名动画 */
 internal class PageEntryAnim(val page: androidx.compose.runtime.State<Float>, val card: androidx.compose.runtime.State<Float>)
@@ -458,9 +477,11 @@ private fun BackgroundImageLayer(image: ImageBitmap) {
 @Composable
 private fun RailLeft(state: State) {
     val c = AppTheme.colors
+    val tablet = LocalTablet.current
     Column(
         Modifier
-            .width(88.dp)
+            // 网页 #app 栅格：桌面 88px / 平板 76px
+            .width(if (tablet) 76.dp else 88.dp)
             .fillMaxHeight()
             // 网页 .rail backdrop-filter: blur(24px) saturate(1.6)——极光下用同一场重绘背层
             .auroraBackdrop(1.6f)
@@ -473,7 +494,7 @@ private fun RailLeft(state: State) {
             .padding(vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {        Page.entries.forEach { p -> RailItem(p, state.page == p, Modifier.width(64.dp)) { state.page = p } }
+    ) {        Page.entries.forEach { p -> RailItem(p, state.page == p, Modifier.width(if (tablet) 60.dp else 64.dp)) { state.page = p } }
         Spacer(Modifier.weight(1f))
         Box(Modifier.size(56.dp)) {
             // 网页 .rail-brand box-shadow: var(--miuix-shadow)
@@ -746,8 +767,11 @@ private fun Modifier.overscrollStretch(scroll: ScrollState, enabled: Boolean): M
 private fun MainColumn(state: State, modifier: Modifier = Modifier) {
     val c = AppTheme.colors
     val compact = LocalCompact.current
+    val short = LocalShortScreen.current
+    val tablet = LocalTablet.current
     Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-        Column(Modifier.fillMaxHeight().widthIn(max = 760.dp)) {
+        // 网页 .main { max-width: 760px }；平板 761–1024px 为 860px
+        Column(Modifier.fillMaxHeight().widthIn(max = if (tablet) 860.dp else 760.dp)) {
             Topbar(state)
             // 网页 .page { animation: pageIn .35s var(--spring) } + .card > * { cardIn .5s（延迟 20ms）}
             val pageAnim = remember { Animatable(1f) }
@@ -771,12 +795,12 @@ private fun MainColumn(state: State, modifier: Modifier = Modifier) {
                     .fillMaxWidth()
                     .verticalScroll(scrollState)
                     .overscrollStretch(scrollState, state.overscroll)
-                    // 网页 .content：24/28/48；窄屏 18/16/32
+                    // 网页 .content：24/28/48；窄屏 18/16/32；横屏矮屏 12/16/18
                     .padding(
-                        start = if (compact) 16.dp else 28.dp,
-                        end = if (compact) 16.dp else 28.dp,
-                        top = if (compact) 18.dp else 24.dp,
-                        bottom = if (compact) 32.dp else 48.dp,
+                        start = if (short) 16.dp else if (compact) 16.dp else 28.dp,
+                        end = if (short) 16.dp else if (compact) 16.dp else 28.dp,
+                        top = if (short) 12.dp else if (compact) 18.dp else 24.dp,
+                        bottom = if (short) 18.dp else if (compact) 32.dp else 48.dp,
                     )
                     .graphicsLayer {
                         alpha = pageAnim.value.coerceIn(0f, 1f)
@@ -802,9 +826,11 @@ private fun MainColumn(state: State, modifier: Modifier = Modifier) {
 
 /** 顶栏：标题/副标题 + 主题切换（padding 22/28/14，标题 26sp/800，底部分隔线） */
 @Composable
-private fun Topbar(state: State) {    val c = AppTheme.colors
+private fun Topbar(state: State) {
+    val c = AppTheme.colors
     val compact = LocalCompact.current
-    // 网页 @media(max-width:360px)：标题 22px
+    val short = LocalShortScreen.current
+    // 网页 @media(max-width:360px)：标题 22px；横屏矮屏 20px
     val narrow = LocalScreenWidth.current <= 360.dp
     Column(Modifier.fillMaxWidth()) {
         Row(
@@ -818,10 +844,10 @@ private fun Topbar(state: State) {    val c = AppTheme.colors
                 // 网页 .topbar 是 border-box：1px border-bottom 吃掉底部内边距
                 // 桌面 22/28/14 → 13；窄屏 14/18/10 → 9
                 .padding(
-                    start = if (compact) 18.dp else 28.dp,
-                    end = if (compact) 18.dp else 28.dp,
-                    top = if (compact) 14.dp else 22.dp,
-                    bottom = if (compact) 9.dp else 13.dp,
+                    start = if (short) 18.dp else if (compact) 18.dp else 28.dp,
+                    end = if (short) 18.dp else if (compact) 18.dp else 28.dp,
+                    top = if (short) 10.dp else if (compact) 14.dp else 22.dp,
+                    bottom = if (short) 8.dp else if (compact) 9.dp else 13.dp,
                 ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -831,8 +857,8 @@ private fun Topbar(state: State) {    val c = AppTheme.colors
                     state.page.title,
                     color = c.onSurface,
                     fontFamily = AppTheme.font,
-                    fontSize = (if (narrow) 22 else 26).sp,
-                    lineHeight = normalLine(if (narrow) 22 else 26),
+                    fontSize = (if (short) 20 else if (narrow) 22 else 26).sp,
+                    lineHeight = normalLine(if (short) 20 else if (narrow) 22 else 26),
                     fontWeight = W.extra,
                     letterSpacing = (-0.5).sp,
                     maxLines = 1,

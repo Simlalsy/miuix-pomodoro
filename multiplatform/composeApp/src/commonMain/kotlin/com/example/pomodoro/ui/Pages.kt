@@ -86,7 +86,9 @@ import com.example.pomodoro.CssSpring
 import com.example.pomodoro.KEY_COLORS
 import com.example.pomodoro.LocalCompact
 import com.example.pomodoro.LocalPageEntry
+import com.example.pomodoro.LocalScreenHeight
 import com.example.pomodoro.LocalScreenWidth
+import com.example.pomodoro.LocalShortScreen
 import com.example.pomodoro.Page
 import com.example.pomodoro.State
 import com.example.pomodoro.TONES
@@ -109,6 +111,7 @@ private val EaseInOut: Easing = Easing { f -> (1f - cos(f * PI).toFloat()) / 2f 
  * ============================================================ */
 @Composable
 fun TimerPage(state: State, compact: Boolean = false) {
+    val short = LocalShortScreen.current
     Column(Modifier.fillMaxWidth()) {
         CardBox {
             CardTitle("模式", " 选择")
@@ -117,7 +120,8 @@ fun TimerPage(state: State, compact: Boolean = false) {
                 state.selectMode(TimerMode.entries[i])
             }
         }
-        Spacer(Modifier.height(32.dp))
+        // 网页 @media(max-height:500px)：.page > .card + .card { margin-top: 22px }
+        Spacer(Modifier.height(if (short) 22.dp else 32.dp))
         TimerCard(state)
     }
 }
@@ -127,12 +131,15 @@ private fun TimerCard(state: State) {
     val scope = rememberCoroutineScope()
     val compact = LocalCompact.current
     val screenW = LocalScreenWidth.current
+    val screenH = LocalScreenHeight.current
+    val short = LocalShortScreen.current
     val narrow = screenW <= 360.dp
-    // 网页 .timer-ring：clamp(230px, 62vw, 300px)；@media(max-width:360px) 为 clamp(190, 58vw, 260)
-    val ringSize = if (narrow) {
-        (screenW * 0.58f).coerceIn(190.dp, 260.dp)
-    } else {
-        (screenW * 0.62f).coerceIn(230.dp, 300.dp)
+    // 网页 .timer-ring：clamp(230px, 62vw, 300px)；@media(max-width:360px) 为 clamp(190, 58vw, 260)；
+    // 横屏媒体查询里是 min(210px, 46vh)
+    val ringSize = when {
+        short -> minOf(210.dp, screenH * 0.46f)
+        narrow -> (screenW * 0.58f).coerceIn(190.dp, 260.dp)
+        else -> (screenW * 0.62f).coerceIn(230.dp, 300.dp)
     }
     // 网页 .timer-ring { animation: popIn 0.6s var(--spring) }：切换回计时页时重新弹入
     val ringPop = remember { Animatable(1f) }
@@ -147,10 +154,11 @@ private fun TimerCard(state: State) {
     CardBox(padding = 0.dp, entry = false) {
         Column(
             Modifier.fillMaxWidth().padding(
-                start = if (compact) 20.dp else 24.dp,
-                end = if (compact) 20.dp else 24.dp,
-                top = if (compact) 20.dp else 34.dp,
-                bottom = if (compact) 20.dp else 30.dp,
+                // 网页 .timer-wrap：桌面 4/24/30、紧凑 20/20/20、横屏 18/18/20
+                start = if (short) 18.dp else if (compact) 20.dp else 24.dp,
+                end = if (short) 18.dp else if (compact) 20.dp else 24.dp,
+                top = if (short) 18.dp else if (compact) 20.dp else 34.dp,
+                bottom = if (short) 20.dp else if (compact) 20.dp else 30.dp,
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -164,7 +172,8 @@ private fun TimerCard(state: State) {
                     }
                 } else Modifier,
             ) { TimerRing(state, ringSize) }
-            Spacer(Modifier.height(32.dp))
+            // 网页 .timer-wrap gap：桌面 32、横屏 16
+            Spacer(Modifier.height(if (short) 16.dp else 32.dp))
             val cp = entryAnim.card.value
             Column(
                 Modifier.then(
@@ -182,8 +191,8 @@ private fun TimerCard(state: State) {
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    // 网页 @media(max-width:360px)：.controls gap 10
-                    horizontalArrangement = Arrangement.spacedBy(if (narrow) 10.dp else 18.dp),
+                    // 网页 @media(max-width:360px) 与横屏媒体查询：.controls gap 10
+                    horizontalArrangement = Arrangement.spacedBy(if (narrow || short) 10.dp else 18.dp),
                 ) {
                     GhostButton("replay") { state.reset() }
                     PrimaryButton(
@@ -194,7 +203,7 @@ private fun TimerCard(state: State) {
                     )
                     GhostButton("skip_next") { state.skip() }
                 }
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(if (short) 16.dp else 32.dp))
                 SessionDots(state)
             }
         }
@@ -278,12 +287,8 @@ private fun TimerRing(state: State, size: Dp) {
                     .clip(CircleShape)
                     .background(c.primary.copy(alpha = if (state.running) 1f else 0f)),
             )
-            // 网页 .timer-time：clamp(44px, 13vw, 64px)；窄屏按 vw，桌面沿用环尺寸比例
-            val timeSize = if (LocalCompact.current) {
-                (LocalScreenWidth.current.value * 0.13f).coerceIn(44f, 64f)
-            } else {
-                (size.value * 0.213f).coerceIn(44f, 64f)
-            }
+            // 网页 .timer-time：font-size clamp(44px, 13vw, 64px)，各断点一致（1280 宽时封顶 64）
+            val timeSize = (LocalScreenWidth.current.value * 0.13f).coerceIn(44f, 64f)
             // CSS line-height:1（行盒 = 字号）：浏览器把负半行距 (fontLine-height)/2 放在盒子上边缘之外，
             // 基线 = ascent - 半行距；Compose 直接把基线放在 ascent 处 —— 差一个半行距，这里手动补回。
             // Inter 度量：(1984+494)/2048 = 1.20996 → 半行距 = 0.10498em
@@ -335,10 +340,15 @@ private fun SessionDots(state: State) {
 /* ============================================================
  * 统计页
  * ============================================================ */
+/** 网页 `.page > .card + .card { margin-top: 32px }`，横屏媒体查询里是 22 */
+@Composable
+private fun pageCardGap(): Dp = if (LocalShortScreen.current) 22.dp else 32.dp
+
 @Composable
 fun StatsPage(state: State) {
     val c = AppTheme.colors
     val today = state.today
+    val gap = pageCardGap()
     Column(Modifier.fillMaxWidth()) {
         CardBox {
             CardTitle("今日", " 专注")
@@ -351,7 +361,7 @@ fun StatsPage(state: State) {
                 ),
             )
         }
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(gap))
         CardBox {
             CardTitle("累计", " 专注")
             Spacer(Modifier.height(20.dp))
@@ -365,7 +375,7 @@ fun StatsPage(state: State) {
             Spacer(Modifier.height(18.dp))
             GhostLabel("download", "导出数据") { state.showToast("数据已导出", "download") }
         }
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(gap))
         CardBox {
             CardTitle("本周", " 分布")
             Spacer(Modifier.height(20.dp))
@@ -592,7 +602,7 @@ private fun TodoRow(todo: TodoItem, onToggle: () -> Unit, onDelete: () -> Unit) 
 @Composable
 fun SettingsPage(state: State) {
     val c = AppTheme.colors
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(32.dp)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(pageCardGap())) {
 
         // 时长设置
         CardBox {

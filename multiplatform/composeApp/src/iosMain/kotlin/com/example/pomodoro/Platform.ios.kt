@@ -120,6 +120,9 @@ actual fun KeepScreenOn(enabled: Boolean) {
 actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) { /* iOS 无系统返回键 */ }
 
 @Composable
+actual fun PlatformSystemBars(dark: Boolean) { /* iOS 状态栏由系统控制 */ }
+
+@Composable
 actual fun BlurBackdrop(show: Boolean) {
     if (!show) return
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))

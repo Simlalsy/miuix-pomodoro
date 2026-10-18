@@ -97,6 +97,9 @@ actual fun KeepScreenOn(enabled: Boolean) { /* Desktop no-op */ }
 actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) { /* Desktop/Esc handled by window */ }
 
 @Composable
+actual fun PlatformSystemBars(dark: Boolean) { /* Desktop 无系统栏 */ }
+
+@Composable
 actual fun BlurBackdrop(show: Boolean) {
     if (!show) return
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(

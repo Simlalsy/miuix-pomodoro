@@ -70,6 +70,8 @@ zip -r PomodoroTimer.ipa Payload
 - iOS / macOS 产物**未签名**：iOS 需自行重签（如 Sideloadly / AltStore），macOS 需右键“打开”绕过 Gatekeeper。
 - Windows / Linux 产物是 jpackage 的 app-image（自带运行时），解压即用；未做代码签名。
 - Android APK 为 debug 签名（预览用途）。
+- `Modifier.blur` 需要 Android 12（API 31）以上：更低版本会退化为无模糊（卡片阴影、环发光、
+  标题栏背景会变成纯色/无阴影）。其余平台不受影响。
 - `org.gradle.java.home` 已移除：本机构建请保证 `JAVA_HOME` 指向 JDK 21。
 - 自定义背景图：支持 `https://` 图片链接与 `data:image/…;base64`（下载/解码为三端 `expect/actual`，
   Android 已声明 `INTERNET` 权限）；背景图生效时卡片按网页 `[data-bg-active]` 的百分比切毛玻璃
@@ -165,6 +167,13 @@ node tools/webshot.js timer dark "%TEMP%\web-timer-dark.png" 393 852 2
   `@media(max-width:360px)`：标题 22、环 `clamp(190,58vw,260)`、控件 gap 10、
   段选 13px/9px、统计格 15/24。底栏条目的实际中心用「剩余空间四等分（两端各 1/8）」复刻
   `justify-content:space-around`，与网页逐项对齐。
+- **手机横屏**（`LocalShortScreen`：高 <500dp 且宽 > 高，对应 `@media(max-height:500px) and
+  (orientation:landscape)`）：顶栏 10/18/8、标题 20、内容 12/16/18、计时卡内边距 18/18/20、
+  环 `min(210px,46vh)`、控件 gap 10、卡间距 22（`.page > .card + .card`）、计时卡内 gap 16。
+  `.timer-time` 在所有断点都是 `clamp(44px, 13vw, 64px)`（原先桌面按环径等比，
+  横屏会得到 44 而非 64）。headless 截图的 `(orientation: landscape)` 需要
+  `Emulation.setDeviceMetricsOverride` 里的 `screenOrientation`，`tools/webshot.js` 已带上。
+- **平板**（`LocalTablet`：761–1024dp）：侧栏 76dp、条目宽 60dp、内容列 `max-width:860dp`。
 - **待办输入行**：网页 `<input>` 是 border-box 46px（12+12 内边距 + 1+1 描边 + 20 行盒），
   原生把装饰盒定高 46dp；空态与 `.todo-stats` 的 `margin:14px 2px 6px` 在高度 0 时**折叠成 14**
   （原生原先多加了 6dp），且占位符必须单行（网页 `<input>` 永不换行）。
@@ -172,6 +181,15 @@ node tools/webshot.js timer dark "%TEMP%\web-timer-dark.png" 393 852 2
   窄屏用 `TextMeasurer` 量出两者宽度作为 Compose `weight`，复刻逐行换行位置；桌面仍用定高行。
 - **安全区**：顶栏/底栏/关于页/迷你计时器分别加 `WindowInsets.systemBars`（对应网页
   `env(safe-area-inset-top/bottom)`）；桌面与离屏截图 insets 为 0，不影响像素比对。
+- **Android 平台适配**（对齐同仓库 `android/` 里的 WebView 版）：
+  - 根节点强制 `Density(fontScale = 1f)`，对应 WebView 的 `textZoom = 100`：系统字号调大时网页不变形，原生也不变形。
+  - `PlatformSystemBars(c.dark)` 同步状态栏/导航栏图标明暗（WebView 版通过 bridge 注入）；
+    `enableEdgeToEdge()` + 根背景铺满，状态栏区域的颜色/内容与网页一致。
+  - `res/` 补齐主题与图标：`windowBackground` = 网页 `--miuix-background`（浅 `#f4f5f7` / 深 `#1a1a1c`）避免首帧白闪；
+    自适应图标（蓝底 + 白色计时器）与 WebView 版同款；`values-v31` 设置
+    `windowSplashScreenBackground/AnimatedIcon`，Android 12+ 系统启动画面不再出现默认白底机器人。
+  - `configChanges` 与 WebView 版一致（含 `uiMode|density|fontScale|smallestScreenSize`）：
+    切换深色模式/字体大小/旋转不重建 Activity（`isSystemInDarkTheme()` 仍会驱动重组）。
 - **动效曲线**：网页四条缓动在 `Theme.kt` 里一一对应 —— `--spring (0.34,1.56,0.64,1)`、
   `--ease (0.4,0,0.2,1)`、`--nav-ease (0.4,1.2,0.95,0.97)`、波纹 `(0.22,1,0.36,1)`；
   所有 `transform` 过渡改用 `tween(时长, easing = CssSpring)` 而非 Compose `spring()`

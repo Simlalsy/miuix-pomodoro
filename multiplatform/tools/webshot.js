@@ -121,6 +121,10 @@ async function main() {
   await send('Runtime.enable', {}, sessionId);
   await send('Emulation.setDeviceMetricsOverride', {
     width: W, height: H, deviceScaleFactor: DPR, mobile: false,
+    // 横屏视口要一并声明屏幕方向，否则 Chromium 的 (orientation: landscape) 仍按竖屏判定
+    screenOrientation: W > H
+      ? { type: 'landscapePrimary', angle: 90 }
+      : { type: 'portraitPrimary', angle: 0 },
   }, sessionId);
 
   // 预置主题 + 清空数据（在页面脚本运行前写入）；page 支持特殊状态：

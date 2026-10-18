@@ -15,6 +15,10 @@ expect fun BlurBackdrop(show: Boolean)
 @Composable
 expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
 
+/** 系统栏图标明暗跟随页面主题（网页由 MiuixBridge.onThemeChanged 同步） */
+@Composable
+expect fun PlatformSystemBars(dark: Boolean)
+
 /** 打开外部链接（关于页的外链行，对应网页 openExternal()） */
 expect fun openExternalUrl(url: String)
 

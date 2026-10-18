@@ -79,6 +79,7 @@ import com.example.pomodoro.LocalCardGlass
 import com.example.pomodoro.LocalCompact
 import com.example.pomodoro.LocalPageEntry
 import com.example.pomodoro.LocalScreenWidth
+import com.example.pomodoro.LocalShortScreen
 import com.example.pomodoro.W
 import com.example.pomodoro.auroraBackdrop
 import com.example.pomodoro.latinLine
@@ -591,9 +592,19 @@ fun PrimaryButton(
 ) {
     val c = AppTheme.colors
     val compact = LocalCompact.current
-    // 网页窄屏 .btn-primary：height 56 / padding 0 26
-    val h = if (compact && height == 60.dp) 56.dp else height
-    val hp = if (compact && paddingHorizontal == 34.dp) 26.dp else paddingHorizontal
+    val short = LocalShortScreen.current
+    // 网页窄屏 .btn-primary：height 56 / padding 0 26；横屏矮屏 50 / 22 / 16
+    val h = when {
+        short && height == 60.dp -> 50.dp
+        compact && height == 60.dp -> 56.dp
+        else -> height
+    }
+    val hp = when {
+        short && paddingHorizontal == 34.dp -> 22.dp
+        compact && paddingHorizontal == 34.dp -> 26.dp
+        else -> paddingHorizontal
+    }
+    val fs = if (short && fontSize == 18) 16 else fontSize
     val bg by animateColorAsState(if (running) c.containerHigh else c.primary, tween(300, easing = CssEase))
     val fg by animateColorAsState(if (running) c.onSurface else c.onPrimary, tween(300, easing = CssEase))
     val interaction = remember { MutableInteractionSource() }
@@ -649,10 +660,10 @@ fun PrimaryButton(
                             alpha = (p / 0.6f).coerceIn(0f, 1f)
                         }
                     },
-                ) { Symbol(icon, if (fontSize >= 16) 26.dp else 20.dp, fg) }
+                ) { Symbol(icon, if (fs >= 16) 26.dp else 20.dp, fg) }
                 Spacer(Modifier.width(8.dp))
             }
-            Text(text, color = fg, fontFamily = AppTheme.font, fontSize = fontSize.sp, lineHeight = normalLine(fontSize), fontWeight = W.bold)
+            Text(text, color = fg, fontFamily = AppTheme.font, fontSize = fs.sp, lineHeight = normalLine(fs), fontWeight = W.bold)
         }
     }
 }

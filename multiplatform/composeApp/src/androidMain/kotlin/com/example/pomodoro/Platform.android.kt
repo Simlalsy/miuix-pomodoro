@@ -100,6 +100,17 @@ actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
 }
 
 @Composable
+actual fun PlatformSystemBars(dark: Boolean) {
+    val view = LocalView.current
+    androidx.compose.runtime.SideEffect {
+        val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+        val controller = androidx.core.view.WindowCompat.getInsetsController(window, view)
+        controller.isAppearanceLightStatusBars = !dark
+        controller.isAppearanceLightNavigationBars = !dark
+    }
+}
+
+@Composable
 actual fun BlurBackdrop(show: Boolean) {
     if (!show) return
     Box(

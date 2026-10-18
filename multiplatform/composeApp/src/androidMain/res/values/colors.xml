@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与网页 miuix-background 一致：Compose 首帧前的窗口底色不应出现白/黑闪 -->
+    <color name="window_background">#FFF4F5F7</color>
+    <color name="ic_launcher_background">#FF3482FF</color>
+</resources>
