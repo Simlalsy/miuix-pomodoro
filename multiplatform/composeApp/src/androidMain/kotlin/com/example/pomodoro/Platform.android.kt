@@ -74,9 +74,8 @@ actual fun requestNotificationPermission(onResult: (Boolean) -> Unit) {
 }
 
 actual fun platformNotify(title: String, body: String) {
-    val act = MainActivity.current ?: return
-    if (!act.hasNotificationPermission()) return
-    act.runOnUiThread { act.showSystemNotification(title, body) }
+    val ctx = MainActivity.appContext ?: MainActivity.current ?: return
+    runCatching { AndroidNotifier.notify(ctx, title, body) }
 }
 
 @Composable

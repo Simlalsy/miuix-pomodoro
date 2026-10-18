@@ -27,9 +27,53 @@ class AndroidSettingsStorage(context: Context) : SettingsStorage {
     override fun loadString(key: String, default: String): String = prefs.getString(key, default) ?: default
 }
 
+/** 完成通知：与 Activity 解耦，Activity 被回收后仍可发送（用 applicationContext） */
+object AndroidNotifier {
+    const val CHANNEL_ID = "pomodoro_timer"
+    private const val NOTIFICATION_ID = 1001
+
+    fun ensureChannel(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "番茄钟通知", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "计时完成通知"
+            }
+        )
+    }
+
+    fun notify(context: Context, title: String, text: String) {
+        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) return
+        ensureChannel(context)
+
+        val intent = android.content.Intent(context, MainActivity::class.java).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context, 0, intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        androidx.core.app.NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+    }
+}
+
 class MainActivity : ComponentActivity() {
 
-    private lateinit var notificationManager: NotificationManager
     private lateinit var state: State
     private var permissionCallback: ((Boolean) -> Unit)? = null
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -41,8 +85,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         current = this
+        appContext = applicationContext
         enableEdgeToEdge()
-        createNotificationChannel()
+        AndroidNotifier.ensureChannel(this)
 
         val storage = AndroidSettingsStorage(this)
         state = State(storage)
@@ -98,52 +143,17 @@ class MainActivity : ComponentActivity() {
         state.autoSave()
     }
 
-    private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "番茄钟通知",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "计时完成通知"
-        }
-        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(channel)
-    }
-
-    fun showSystemNotification(title: String, text: String) {
-        val intent = android.content.Intent(this, MainActivity::class.java).apply {
-            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
-        }
-        val pendingIntent = android.app.PendingIntent.getActivity(
-            this, 0, intent,
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val fullScreenIntent = android.app.PendingIntent.getActivity(
-            this, 1, intent,
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(pendingIntent)
-            .setFullScreenIntent(fullScreenIntent, true)
-            .setAutoCancel(true)
-            .build()
-
-        notificationManager.notify(NOTIFICATION_ID, notification)
-    }
-
     companion object {
-        const val CHANNEL_ID = "pomodoro_timer"
-        private const val NOTIFICATION_ID = 1001
+        const val CHANNEL_ID = AndroidNotifier.CHANNEL_ID
 
-        /** 当前 Activity（通知发布/权限请求需要） */
+        /** 当前 Activity（权限请求需要；通知发送用 [appContext]） */
         @Volatile
         var current: MainActivity? = null
+            private set
+
+        /** 应用 Context：Activity 回收后仍能发完成通知 */
+        @Volatile
+        var appContext: Context? = null
             private set
     }
 }

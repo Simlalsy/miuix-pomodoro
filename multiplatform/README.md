@@ -172,6 +172,29 @@ node tools/webshot.js timer dark "%TEMP%\web-timer-dark.png" 393 852 2
   窄屏用 `TextMeasurer` 量出两者宽度作为 Compose `weight`，复刻逐行换行位置；桌面仍用定高行。
 - **安全区**：顶栏/底栏/关于页/迷你计时器分别加 `WindowInsets.systemBars`（对应网页
   `env(safe-area-inset-top/bottom)`）；桌面与离屏截图 insets 为 0，不影响像素比对。
+- **动效曲线**：网页四条缓动在 `Theme.kt` 里一一对应 —— `--spring (0.34,1.56,0.64,1)`、
+  `--ease (0.4,0,0.2,1)`、`--nav-ease (0.4,1.2,0.95,0.97)`、波纹 `(0.22,1,0.36,1)`；
+  所有 `transform` 过渡改用 `tween(时长, easing = CssSpring)` 而非 Compose `spring()`
+  （后者的过冲曲线与浏览器 `cubic-bezier` 不同，观感偏“弹”）。
+- **逐条复刻的关键帧**：`pageIn .35s`（页面容器）、`cardIn .5s + 20ms`（卡片内容，
+  时钟卡片排除环本身）、`popIn .6s`（计时环）、`growbar .3s`（段选下划线，从左侧 scaleX）、
+  `iconPop .42s`（开始/暂停图标：scale .5→1.18→1、rotate −25°→8°→0、opacity 0→1）、
+  `bump .5s`（统计数值变化时 scale→1.22）、`barGrow .6s + 每列 .07s`（周柱从底部展开）、
+  `aboutPop .5s/.05s`、`aboutUp .45s/.1s`、`aboutUp .5s/.16s(+.22s)`（关于页 logo/名称/卡片）、
+  `themeWash .75s`（主题洗刷：径向 primary 42%、scale .5→1.4、opacity 0→.55→0）、
+  `stroke-dashoffset .3s linear`（环进度）。
+- **触感反馈**：按钮/侧栏/步进器/开关/音色胶囊/待办勾选按下缩放按各自 CSS 时长与弹簧曲线；
+  另加 MIUI 波纹（`Modifier.miuixRipple`：按下点半径 = 元素长边/2、scale 0→3、
+  opacity .5→.25（60%）→0，0.7s），只在 Initial 阶段观察指针事件、不消费，不影响点击。
+- **超出回弹**（设置里的「超出回弹」开关真正生效）：对应网页 `enableOverscrollStretch()` ——
+  触摸拖到顶/底后继续下拉时，按 `d = over·cap/(cap+over)`（cap = .55×视口高）做
+  一半位移 + `scaleY(1+d/h)` 拉伸（原点在被拖的那一侧），松手 0.5s 弹簧回弹；关闭开关立即收回。
+- **Toast**：底部 36、`translateY(20→0)` + opacity 0→1，0.35s 弹簧；停留 2400ms（同网页 `setTimeout`）。
+- **桌面通知**：新增 `requestNotificationPermission` / `platformNotify` 的 expect/actual。
+  网页只在用户打开「桌面通知」时调 `requestNotify()`，未授权不点亮开关 —— 原生同逻辑：
+  Android 用 `POST_NOTIFICATIONS` 运行时权限（发送走 `applicationContext`，Activity 回收后仍可发）；
+  桌面用 `SystemTray` 气泡；iOS 用 `UNUserNotificationCenter`。完成时的文案与网页一致
+  （专注完成/休息结束），跳过（`skip`）不发通知。
 - **进度环发光**：CSS 是 `drop-shadow(0 0 10px primary@60%)`，原生改用同弧线 13dp 高斯模糊层
   （`Modifier.blur`，Android 12 以下为空操作）；环内环境光按 `radial-gradient(26% → transparent 70%,
 circle=最远角, opacity .5→.85)` 精确定参；截图时两边把呼吸动画冻结到同一基准相位
@@ -220,5 +243,9 @@ circle=最远角, opacity .5→.85)` 精确定参；截图时两边把呼吸动�
 - 桌面 0.24–0.75（极光 1.09）已主要来自文字抗锯齿、渐变抖动与亚像素定位；窄屏 0.7–1.6
   （关于页 2.5）同理，且视口小、信噪比更低。关于页残余集中在 96px logo 阴影、渐变标题墨迹与
   `word-break: break-all` 的换行点（Compose 无对应的「任意字符可断行」策略）。
+- `cardIn` 的逐子元素延迟（网页按 `nth-child` 给 .02/.06/.1s）在 Compose 里无法对
+  `ColumnScope` 的子项逐个加图层，改为**整块**入场（时长/曲线/位移量一致，观感差别在一次
+  20–100ms 的错落）；时钟卡片仍按网页规则把环排除在外、单独 `popIn`。
+- iOS 的 `UNUserNotificationCenter` 代码只能在 macOS 上编译验证（本机 Windows 无法构建 iOS 目标）。
 
 **被墙时的推送通道**：`github.com:443` 不可达而 `api.github.com` 正常时，用 `node tools/gh-push.js main` 经 Git Data API 推送（内部自检「远端 tree == 本地 tree」）。
