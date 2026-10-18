@@ -1,9 +1,11 @@
 package com.example.pomodoro.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -13,7 +15,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -75,6 +79,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pomodoro.AppTheme
+import com.example.pomodoro.CssEase
 import com.example.pomodoro.CssSpring
 import com.example.pomodoro.KEY_COLORS
 import com.example.pomodoro.LocalCompact
@@ -515,9 +520,15 @@ fun TodosPage(state: State) {
 @Composable
 private fun TodoRow(todo: TodoItem, onToggle: () -> Unit, onDelete: () -> Unit) {
     val c = AppTheme.colors
+    // 网页 .todo-item:hover { transform: translateY(-1px) }
+    val hoverInteraction = remember { MutableInteractionSource() }
+    val rowHovered by hoverInteraction.collectIsHoveredAsState()
+    val lift by animateDpAsState(if (rowHovered) (-1).dp else 0.dp, tween(300, easing = CssSpring))
     Row(
         Modifier
             .fillMaxWidth()
+            .offset(y = lift)
+            .hoverable(hoverInteraction)
             .clip(RoundedCornerShape(14.dp))
             // [data-bg-active]：.todo-item 底色 52%
             .background(glassDim(c.surface, 0.52f))
@@ -552,16 +563,22 @@ private fun TodoRow(todo: TodoItem, onToggle: () -> Unit, onDelete: () -> Unit) 
         )
         val delInteraction = remember { MutableInteractionSource() }
         val delPressed by delInteraction.collectIsPressedAsState()
+        val delHovered by delInteraction.collectIsHoveredAsState()
         val delScale by animateFloatAsState(if (delPressed) 0.94f else 1f, tween(300, easing = CssSpring))
+        // 网页 .todo-del:hover { background: danger-soft; color: error }
+        val delBg by animateColorAsState(if (delHovered) c.dangerSoft else Color.Transparent, tween(250, easing = CssEase))
+        val delFg by animateColorAsState(if (delHovered) c.error else c.variant, tween(250, easing = CssEase))
         Box(
             Modifier.size(36.dp)
                 .then(if (delScale < 0.999f) Modifier.scale(delScale) else Modifier)
                 .clip(RoundedCornerShape(12.dp))
+                .background(delBg)
+                .hoverable(delInteraction)
                 .clickable(interactionSource = delInteraction, indication = null, onClick = onDelete)
-                .miuixRipple(c.variant),
+                .miuixRipple(delFg),
             contentAlignment = Alignment.Center,
         ) {
-            Symbol("delete", 20.dp, c.variant)
+            Symbol("delete", 20.dp, delFg)
         }
     }
 }
@@ -627,11 +644,17 @@ fun SettingsPage(state: State) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 KEY_COLORS.forEach { (name, hex) ->
                     val active = state.accent.equals(hex, ignoreCase = true)
+                    // 网页 .color-swatch:hover { transform: scale(1.1) }
+                    val swInteraction = remember { MutableInteractionSource() }
+                    val swHovered by swInteraction.collectIsHoveredAsState()
+                    val swScale by animateFloatAsState(if (swHovered) 1.1f else 1f, tween(300, easing = CssSpring))
                     Box(
                         Modifier
                             .size(40.dp)
+                            .scale(swScale)
                             .clip(RoundedCornerShape(14.dp))
                             .background(accentColorOrNull(hex) ?: c.primary)
+                            .hoverable(swInteraction)
                             .clickable { state.accent = hex; state.saveSettings(); state.showToast("已切换到「$name」", "palette") }
                             .miuixRipple(c.onSurface),
                         contentAlignment = Alignment.Center,

@@ -1,9 +1,11 @@
 package com.example.pomodoro
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -15,7 +17,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -103,6 +107,7 @@ import com.example.pomodoro.ui.StatsPage
 import com.example.pomodoro.ui.TimerPage
 import com.example.pomodoro.ui.ToastBar
 import com.example.pomodoro.ui.TodosPage
+import com.example.pomodoro.ui.hoverSurface
 import com.example.pomodoro.ui.miuixRipple
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -135,16 +140,14 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
             }
         }
 
-        // 启动页：进度条走满 → 淡出（对应网页 #loading 的两条进度条与 0.4s 透明度过渡）
+        // 启动页：进度条 1600ms 线性走满（网页 runLoading()），淡出 0.4s var(--ease)
         var splashVisible by remember { mutableStateOf(showSplash) }
         val splashProgress = remember { Animatable(if (showSplash) 0f else 1f) }
         val splashAlpha = remember { Animatable(if (showSplash) 1f else 0f) }
         LaunchedEffect(Unit) {
             if (!showSplash) return@LaunchedEffect
-            splashProgress.animateTo(0.72f, tween(420, easing = LinearEasing))
-            splashProgress.animateTo(1f, tween(420, easing = LinearEasing))
-            delay(120)
-            splashAlpha.animateTo(0f, tween(400, easing = NavEase))
+            splashProgress.animateTo(1f, tween(1600, easing = LinearEasing))
+            splashAlpha.animateTo(0f, tween(400, easing = CssEase))
             splashVisible = false
         }
 
@@ -218,7 +221,8 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
             if (splashVisible) {
                 SplashScreen(
                     appProgress = splashProgress.value,
-                    fontProgress = splashProgress.value,
+                    // 网页 runLoading()：字体条延后 15% 起步，0.85 的区间走完
+                    fontProgress = ((splashProgress.value - 0.15f) / 0.85f).coerceIn(0f, 1f),
                     alpha = splashAlpha.value,
                 )
             }
@@ -525,24 +529,41 @@ private fun RailItem(page: Page, active: Boolean, modifier: Modifier = Modifier,
     // 网页 .rail-item:active { transform: scale(.9) }，transform .35s var(--spring)
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
     val press by animateFloatAsState(if (pressed) 0.9f else 1f, tween(350, easing = CssSpring))
+    // 网页 .rail-item:hover { background: container-high; color: on-surface; translateY(-1px) }
+    val bg by animateColorAsState(
+        if (hovered) hoverSurface(0) else if (active) c.soft else Color.Transparent,
+        tween(350, easing = CssEase),
+    )
+    val fg by animateColorAsState(
+        when {
+            hovered -> c.onSurface
+            active -> c.primary
+            else -> c.variant
+        },
+        tween(350, easing = CssEase),
+    )
+    val lift by animateDpAsState(if (hovered) (-1).dp else 0.dp, tween(350, easing = CssSpring))
     Column(
         modifier
             .widthIn(max = 80.dp)
+            .offset(y = lift)
             .scale(press)
             // 网页窄屏 .rail-item：padding 8 / radius 14
             .clip(RoundedCornerShape(if (compact) 14.dp else 16.dp))
-            .background(if (active) c.soft else Color.Transparent)
+            .background(bg)
+            .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .miuixRipple(if (active) c.primary else c.variant)
+            .miuixRipple(fg)
             .padding(vertical = if (compact) 8.dp else 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.scale(if (active) 1.14f else 1f)) {
-            Symbol(page.icon, 26.dp, if (active) c.primary else c.variant)
+            Symbol(page.icon, 26.dp, fg)
         }
         Spacer(Modifier.height(6.dp))
-        Text(page.label, color = if (active) c.primary else c.variant, fontFamily = AppTheme.font, fontSize = 12.sp, lineHeight = normalLine(12), fontWeight = W.semi)
+        Text(page.label, color = fg, fontFamily = AppTheme.font, fontSize = 12.sp, lineHeight = normalLine(12), fontWeight = W.semi)
     }
 }
 

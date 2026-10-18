@@ -186,6 +186,13 @@ node tools/webshot.js timer dark "%TEMP%\web-timer-dark.png" 393 852 2
 - **触感反馈**：按钮/侧栏/步进器/开关/音色胶囊/待办勾选按下缩放按各自 CSS 时长与弹簧曲线；
   另加 MIUI 波纹（`Modifier.miuixRipple`：按下点半径 = 元素长边/2、scale 0→3、
   opacity .5→.25（60%）→0，0.7s），只在 Initial 阶段观察指针事件、不消费，不影响点击。
+- **悬停态（桌面指针设备）**：网页的 `:hover` 规则逐条复刻 —— `.icon-btn`/`.rail-item` 底色换成
+  container-high 并上移 1px（极光下用白色 12%）、`.btn-ghost`/`.stepper button` 换 container-highest
+  （极光 16%）、`.btn-primary` 用 `brightness(1.05)`（逐通道乘系数，`brighten()`）、
+  `.stat-cell` 上移 2px、`.todo-item` 上移 1px、`.todo-del` 换 danger-soft + error 文字、
+  `.color-swatch` 放大 1.1。触摸端 `collectIsHoveredAsState` 恒为 false，不影响手机观感。
+- **启动页**：与网页 `runLoading()` 同节奏 —— 1600ms 线性走满、字体条延后 15% 起步
+  （`(t−0.15)/0.85`）、logo `breathe 2.2s var(--ease)` 呼吸、结束 0.4s `var(--ease)` 淡出。
 - **超出回弹**（设置里的「超出回弹」开关真正生效）：对应网页 `enableOverscrollStretch()` ——
   触摸拖到顶/底后继续下拉时，按 `d = over·cap/(cap+over)`（cap = .55×视口高）做
   一半位移 + `scaleY(1+d/h)` 拉伸（原点在被拖的那一侧），松手 0.5s 弹簧回弹；关闭开关立即收回。

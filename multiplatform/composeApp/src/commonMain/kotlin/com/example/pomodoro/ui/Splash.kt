@@ -1,6 +1,5 @@
 package com.example.pomodoro.ui
 
-import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -30,11 +29,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pomodoro.AppTheme
+import com.example.pomodoro.CssEase
 import com.example.pomodoro.W
-import kotlin.math.PI
-import kotlin.math.cos
-
-private val EaseInOutSine: Easing = Easing { f -> (1f - cos(f * PI).toFloat()) / 2f }
 
 /**
  * 启动加载页：对应网页 `#loading`
@@ -59,9 +55,10 @@ fun SplashScreen(appProgress: Float, fontProgress: Float, alpha: Float = 1f) {
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             val inf = rememberInfiniteTransition(label = "breathe")
+            // 网页 @keyframes breathe 2.2s var(--ease)：1 → 1.08 → 1
             val breathe by inf.animateFloat(
                 1f, 1.08f,
-                infiniteRepeatable(tween(1100, easing = EaseInOutSine), RepeatMode.Reverse),
+                infiniteRepeatable(tween(1100, easing = CssEase), RepeatMode.Reverse),
                 label = "breatheScale",
             )
             Box(

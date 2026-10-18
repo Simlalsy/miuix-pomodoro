@@ -9,7 +9,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +55,7 @@ import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
@@ -93,6 +96,28 @@ import com.example.pomodoro.normalLine
 internal fun glassDim(color: Color, pct: Float): Color {
     val c = AppTheme.colors
     return if (c.bgActive) color.copy(alpha = color.alpha * pct) else color
+}
+
+/**
+ * 网页 `filter: brightness(N)` 的等价值（逐通道乘系数并钳到 0–1）。
+ * 用于 `.btn-primary:hover { filter: brightness(1.05) }`。
+ */
+internal fun brighten(color: Color, factor: Float): Color = Color(
+    red = (color.red * factor).coerceIn(0f, 1f),
+    green = (color.green * factor).coerceIn(0f, 1f),
+    blue = (color.blue * factor).coerceIn(0f, 1f),
+    alpha = color.alpha,
+)
+
+/** 网页 `:hover` 的底色：极光主题用白色低透明度覆盖，背景图模式按 60% 混透明 */
+@Composable
+internal fun hoverSurface(level: Int): Color {
+    val c = AppTheme.colors
+    return when {
+        c.aurora -> Color.White.copy(alpha = if (level >= 1) 0.16f else 0.12f)
+        c.bgActive -> glassDim(c.containerHigh, 0.60f)
+        else -> if (level >= 1) c.containerHighest else c.containerHigh
+    }
 }
 
 private class RippleSpec {
@@ -368,7 +393,7 @@ fun Segment(
                                 .height(3.dp)
                                 .graphicsLayer {
                                     scaleX = p.value
-                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                                    transformOrigin = TransformOrigin(0f, 0.5f)
                                 }
                                 .clip(RoundedCornerShape(2.dp))
                                 .background(c.primary),
@@ -423,12 +448,17 @@ private fun StepperButton(icon: String, onClick: () -> Unit) {
     val c = AppTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
     val scale by animateFloatAsState(if (pressed) 0.82f else 1f, tween(300, easing = CssSpring))
+    // 网页 .stepper button:hover { background: container-highest }（极光：白 16%）
+    val bg by animateColorAsState(if (hovered) hoverSurface(1) else Color.Transparent, tween(250, easing = CssEase))
     Box(
         Modifier
             .size(34.dp)
             .scale(scale)
             .clip(RoundedCornerShape(9.dp))
+            .background(bg)
+            .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .miuixRipple(c.onSurface),
         contentAlignment = Alignment.Center,
@@ -466,32 +496,39 @@ fun AppSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
     }
 }
 
-/** 无文字图标按钮（顶栏/背景）：44×44 radius 14 */
+/** 无文字图标按钮（顶栏/背景）：44×44 radius 14；悬停底色 + 上移 1px（网页 .icon-btn:hover） */
 @Composable
 fun IconBtn(icon: String, size: Dp = 44.dp, iconSize: Dp = 24.dp, tint: Color? = null, bg: Color = Color.Transparent, onClick: () -> Unit) {
     val c = AppTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
     val scale by animateFloatAsState(if (pressed) 0.88f else 1f, tween(350, easing = CssSpring))
+    val bgColor by animateColorAsState(if (hovered) hoverSurface(0) else bg, tween(300, easing = CssEase))
+    val lift by animateDpAsState(if (hovered) (-1).dp else 0.dp, tween(350, easing = CssSpring))
     Box(
         Modifier
             .size(size)
+            .offset(y = lift)
             .scale(scale)
             .clip(RoundedCornerShape(14.dp))
-            .background(bg)
+            .background(bgColor)
+            .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .miuixRipple(tint ?: c.onSurface),
         contentAlignment = Alignment.Center,
     ) { Symbol(icon, iconSize, tint ?: c.onSurface) }
 }
 
-/** 幽灵按钮（重置/跳过）：52×52 radius 18，bg container-high */
+/** 幽灵按钮（重置/跳过）：52×52 radius 18，bg container-high；悬停 container-highest */
 @Composable
 fun GhostButton(icon: String, onClick: () -> Unit) {
     val c = AppTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(350, easing = CssSpring))
+    val bg by animateColorAsState(if (hovered) hoverSurface(1) else glassSurface(1), tween(300, easing = CssEase))
     Box(
         Modifier
             .size(52.dp)
@@ -499,7 +536,8 @@ fun GhostButton(icon: String, onClick: () -> Unit) {
             .clip(RoundedCornerShape(18.dp))
             // 网页 [data-theme=aurora] .btn-ghost backdrop-filter: blur(8px)
             .auroraBackdrop(1f)
-            .background(glassSurface(1))
+            .background(bg)
+            .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .miuixRipple(c.onSurface),
         contentAlignment = Alignment.Center,
@@ -515,7 +553,9 @@ fun GhostWideButton(text: String, icon: String, onClick: () -> Unit) {
     val c = AppTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(350, easing = CssSpring))
+    val bg by animateColorAsState(if (hovered) hoverSurface(1) else glassSurface(1), tween(300, easing = CssEase))
     Row(
         Modifier
             .height(46.dp)
@@ -523,7 +563,8 @@ fun GhostWideButton(text: String, icon: String, onClick: () -> Unit) {
             .clip(RoundedCornerShape(18.dp))
             // 网页 [data-theme=aurora] .btn-ghost backdrop-filter: blur(8px)
             .auroraBackdrop(1f)
-            .background(glassSurface(1))
+            .background(bg)
+            .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .miuixRipple(c.onSurface)
             .padding(horizontal = 18.dp),
@@ -555,7 +596,13 @@ fun PrimaryButton(
     val fg by animateColorAsState(if (running) c.onSurface else c.onPrimary, tween(300, easing = CssEase))
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(350, easing = CssSpring))
+    // 网页 .btn-primary:hover { filter: brightness(1.05) }
+    val hoverBg by animateColorAsState(
+        if (hovered && !running) brighten(c.primary, 1.05f) else Color.Unspecified,
+        tween(300, easing = CssEase),
+    )
     // 网页 popIcon()：开始/暂停时图标 iconPop 0.42s var(--spring)
     // （scale .5→1.18@60%→1、rotate -25°→8°→0、opacity 0→1）
     val iconPop = remember { Animatable(1f) }
@@ -579,7 +626,8 @@ fun PrimaryButton(
             Modifier
                 .height(h)
                 .clip(RoundedCornerShape(18.dp))
-                .background(bg)
+                .background(if (hoverBg == Color.Unspecified) bg else hoverBg)
+                .hoverable(interaction)
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick)
                 .miuixRipple(fg)
                 .padding(horizontal = hp),
@@ -623,8 +671,14 @@ fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
             bump.animateTo(1f, tween(300, easing = CssSpring))
         }
     }
+    // 网页 .stat-cell:hover { transform: translateY(-2px) }
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val lift by animateDpAsState(if (hovered) (-2).dp else 0.dp, tween(350, easing = CssSpring))
     Column(
         modifier
+            .hoverable(interaction)
+            .offset(y = lift)
             .clip(RoundedCornerShape(16.dp))
             // 网页 [data-theme=aurora] .stat-cell backdrop-filter: blur(12px) saturate(1.4)
             .auroraBackdrop(1.4f)
@@ -645,11 +699,16 @@ fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
             fontSize = (if (narrow) 24 else 28).sp,
             lineHeight = latinLine(if (narrow) 24 else 28),
             fontWeight = W.extra,
-            modifier = Modifier.graphicsLayer {
-                val s = bump.value
-                scaleX = s; scaleY = s
-                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.5f)
-            },
+            // 只有 bump 进行中才加图层：常驻 graphicsLayer 会让文字走离屏栅格化，AA 与直绘略有差异
+            modifier = Modifier.then(
+                if (bump.value < 0.999f) {
+                    Modifier.graphicsLayer {
+                        val s = bump.value
+                        scaleX = s; scaleY = s
+                        transformOrigin = TransformOrigin(0.5f, 0.5f)
+                    }
+                } else Modifier,
+            ),
         )
         // 钉住行盒：Skia 会把行高按整数像素向上取整，单元格会比网页高 0.5dp
         Text(
