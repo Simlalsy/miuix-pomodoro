@@ -80,15 +80,19 @@ compose.desktop {
             packageVersion = "1.0.0"
             description = "Pomodoro Timer — Miuix style"
             vendor = "Simlalsy"
+            // 应用图标（composeApp/icons 下由同一张 PNG 生成 ICO/ICNS/PNG）
             windows {
                 menuGroup = "PomodoroTimer"
                 upgradeUuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                iconFile.set(project.file("icons/app.ico"))
             }
             macOS {
                 bundleID = "com.example.pomodoro"
+                iconFile.set(project.file("icons/app.icns"))
             }
             linux {
                 packageName = "pomodorotimer"
+                iconFile.set(project.file("icons/app.png"))
             }
         }
     }

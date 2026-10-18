@@ -1,6 +1,7 @@
 # Gradle / 构建产物
 .gradle/
 build/
+bin/
 .kotlin/
 local.properties
 .idea/

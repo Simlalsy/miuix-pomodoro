@@ -10,8 +10,9 @@
 composeApp/
 ├── src/commonMain/   共用：App.kt（全部 UI 与动画）、State.kt（计时/统计/存储接口）、Theme.kt
 ├── src/androidMain/  MainActivity + SharedPreferences 存储 + 前台服务/通知
-├── src/desktopMain/  main.kt（窗口入口）+ 桌面平台实现
-└── src/iosMain/      MainViewController + NSUserDefaults 存储 + UIKit/AudioToolbox 实现
+├── src/desktopMain/  main.kt（窗口入口）+ 桌面平台实现；resources/app-icon.png 为窗口/任务栏图标
+├── src/iosMain/      MainViewController + NSUserDefaults 存储 + UIKit/AudioToolbox 实现
+└── icons/            应用图标（app.ico / app.icns / app.png，由同一张 750² PNG 生成）
 iosApp/               iOS 的 SwiftUI 壳（XcodeGen 生成 xcodeproj）
 ```
 
@@ -222,6 +223,9 @@ node tools/webshot.js timer dark "%TEMP%\web-timer-dark.png" 393 852 2
   触摸拖到顶/底后继续下拉时，按 `d = over·cap/(cap+over)`（cap = .55×视口高）做
   一半位移 + `scaleY(1+d/h)` 拉伸（原点在被拖的那一侧），松手 0.5s 弹簧回弹；关闭开关立即收回。
 - **Toast**：底部 36、`translateY(20→0)` + opacity 0→1，0.35s 弹簧；停留 2400ms（同网页 `setTimeout`）。
+- **应用图标**：`composeApp/icons/app.ico|app.icns|app.png`（同一张 PNG 生成）供 jpackage 使用，
+  `windows/macOS/linux` 的 `iconFile` 已接；桌面窗口/任务栏图标由 `src/desktopMain/resources/app-icon.png`
+  在运行时设置（`Window(icon = …)`）；Android 用自适应图标（蓝底 + 白色计时器，与安卓 WebView 版同款）。
 - **桌面通知**：新增 `requestNotificationPermission` / `platformNotify` 的 expect/actual。
   网页只在用户打开「桌面通知」时调 `requestNotify()`，未授权不点亮开关 —— 原生同逻辑：
   Android 用 `POST_NOTIFICATIONS` 运行时权限（发送走 `applicationContext`，Activity 回收后仍可发）；
