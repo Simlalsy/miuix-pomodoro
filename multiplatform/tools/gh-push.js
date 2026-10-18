@@ -16,6 +16,40 @@ const DRY = process.argv.includes('--dry-run');
 const ROOT = 'e:/ke/cook';
 
 const git = (args) => cp.execSync(`git ${args}`, { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 }).toString().trim();
+const gitRaw = (args) => cp.execSync(`git ${args}`, { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 });
+
+/**
+ * 在本地写出「与远端等价」的提交对象（同一 tree、同一父链、同一 message + 推送标记），
+ * 返回其 sha —— 这样 update-ref 才有对象可指（API 提交的 sha 本地并不存在）。
+ */
+function materialize(localSha, remoteTree, remoteParent) {
+  const raw = gitRaw(`cat-file commit ${localSha}`).toString('utf8');
+  const lines = raw.split('\n');
+  const out = [lines[0].startsWith('tree ') ? `tree ${remoteTree}` : lines[0]];
+  let skippedParents = false;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('parent ')) {
+      if (!skippedParents) {
+        out.push(`parent ${remoteParent}`);
+        skippedParents = true;
+      }
+      continue;
+    }
+    out.push(line);
+  }
+  const content = Buffer.from(
+    out.join('\n').replace(/\n+$/, '') + '\n\n(pushed via GitHub Git Data API)',
+    'utf8',
+  );
+  return gitRaw2(['hash-object', '-t', 'commit', '-w', '--stdin'], content).trim();
+}
+
+function gitRaw2(args, input) {
+  return cp
+    .execSync(`git ${args.join(' ')}`, { cwd: ROOT, input, maxBuffer: 64 * 1024 * 1024 })
+    .toString();
+}
 const token = cp.execSync('gh auth token').toString().trim();
 const API = `https://api.github.com/repos/${REPO}`;
 
@@ -39,6 +73,7 @@ async function main() {
   // 1) 远端当前 head
   const ref = await api('GET', `/git/ref/heads/${BRANCH}`);
   let parentSha = ref.object.sha;
+  let lastLocalSha = null;
   console.log('remote head:', parentSha.slice(0, 7));
 
   // 2) 本地领先的提交（旧 → 新）
@@ -48,8 +83,7 @@ async function main() {
   console.log('待推提交:', shas.map((s) => s.slice(0, 7)).join(' '));
 
   for (const sha of shas) {
-    const meta = git(`show -s --format=%an%n%ae%n%aI%n%cn%n%ce%n%cI%n%B ${sha}`).split('\n');
-    const [an, ae, ad, cn, ce, cd, ...msgLines] = meta;
+    const meta = git(`show -s --format=%an%n%ae%n%aI%n%cn%n%ce%n%cI%n%B ${sha}`).split('\n');    const [an, ae, ad, cn, ce, cd, ...msgLines] = meta;
     const message = msgLines.join('\n').trim();
 
     const changes = git(`diff-tree --no-commit-id --name-status -r ${sha}`).split('\n').filter(Boolean);
@@ -89,6 +123,8 @@ async function main() {
       author: { name: an, email: ae, date: ad },
       committer: { name: cn, email: ce, date: cd },
     });
+    // 在本地写出等价提交，供最后 update-ref 使用（父链用远端 sha）
+    lastLocalSha = materialize(sha, newTree.sha, parentSha);
     parentSha = newCommit.sha;
   }
 
@@ -96,9 +132,10 @@ async function main() {
 
   await api('PATCH', `/git/refs/heads/${BRANCH}`, { sha: parentSha, force: false });
   console.log('远端已更新 ->', parentSha.slice(0, 7));
-  // 3) 同步本地 origin/main 引用
-  git(`update-ref refs/remotes/origin/${BRANCH} ${parentSha}`);
-  console.log('本地 origin/' + BRANCH + ' 已同步');
+  // 3) 本地分支与 origin/<branch> 对齐到等价提交（tree/内容一致，sha 与远端一致）
+  git(`update-ref refs/heads/${BRANCH} ${lastLocalSha}`);
+  git(`update-ref refs/remotes/origin/${BRANCH} ${lastLocalSha}`);
+  console.log('本地 ' + BRANCH + ' 与 origin/' + BRANCH + ' 已同步 ->', lastLocalSha.slice(0, 7));
 }
 
 function status(n) { return `files=${n}`; }
