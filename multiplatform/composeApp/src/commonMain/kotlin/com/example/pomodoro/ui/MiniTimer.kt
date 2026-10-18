@@ -47,6 +47,7 @@ import com.example.pomodoro.CssSpring
 import com.example.pomodoro.LocalCompact
 import com.example.pomodoro.State
 import com.example.pomodoro.W
+import com.example.pomodoro.modeAccent
 import kotlin.math.roundToInt
 
 /**
@@ -111,7 +112,8 @@ fun MiniTimerOverlay(state: State) {
                         drawArc(c.containerHighest, 0f, 360f, false, tl, sz, style = Stroke(sw))
                         val p = state.progress.coerceIn(0f, 1f)
                         if (p > 0f) {
-                            drawArc(c.primary, -90f, 360f * p, false, tl, sz, style = Stroke(sw, cap = StrokeCap.Round))
+                            // 网页 updateModeUI()：迷你环描边跟随当前模式色
+                            drawArc(modeAccent(c, state.mode), -90f, 360f * p, false, tl, sz, style = Stroke(sw, cap = StrokeCap.Round))
                         }
                     }
                 }

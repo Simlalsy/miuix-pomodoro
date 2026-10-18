@@ -57,6 +57,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -186,7 +187,7 @@ fun App(state: State, isDark: Boolean = isSystemInDarkTheme(), showSplash: Boole
                 LocalShortScreen provides (maxHeight < 500.dp && maxWidth > maxHeight),
                 LocalTablet provides (maxWidth > 760.dp && maxWidth <= 1024.dp),
             ) {
-            if (auroraSpec != null) AuroraBackground(auroraSpec)
+            AuroraBackground(auroraSpec)
             // 自定义背景图（对应网页 #bgImage：盖在极光层之上、内容之下）
             state.bgImage?.let { BackgroundImageLayer(it) }
 
@@ -432,8 +433,25 @@ private fun buildAuroraImage(
  * 而 CSS 的图层是左上锚定 —— 这里直接画「已按漂移位置摆好」的屏幕空间位图，天然对齐。
  */
 @Composable
-private fun AuroraBackground(spec: AuroraFieldSpec) {
-    Box(Modifier.fillMaxSize().clipToBounds().drawBehind { drawImage(spec.image) })
+private fun AuroraBackground(spec: AuroraFieldSpec?) {
+    // 网页 .aurora-bg { opacity: 0; transition: opacity .8s var(--ease) }：
+    // 切到极光主题淡入，切走时保留最后一帧淡出
+    val shown = remember { mutableStateOf(spec) }
+    SideEffect { if (spec != null) shown.value = spec }
+    val alpha = remember { Animatable(if (State.debugFreezeAnim) if (spec != null) 1f else 0f else 0f) }
+    LaunchedEffect(spec != null) {
+        val target = if (spec != null) 1f else 0f
+        if (State.debugFreezeAnim) alpha.snapTo(target) else alpha.animateTo(target, tween(800, easing = CssEase))
+    }
+    val image = shown.value
+    if (image == null || alpha.value <= 0.002f) return
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer { this.alpha = alpha.value }
+            .clipToBounds()
+            .drawBehind { drawImage(image.image) },
+    )
 }
 
 /**
@@ -445,7 +463,7 @@ private fun BackgroundImageLayer(image: ImageBitmap) {
     val alpha = remember { Animatable(0f) }
     LaunchedEffect(image) {
         alpha.snapTo(0f)
-        alpha.animateTo(1f, tween(600, easing = NavEase))
+        alpha.animateTo(1f, tween(600, easing = CssEase))
     }
     Box(
         Modifier

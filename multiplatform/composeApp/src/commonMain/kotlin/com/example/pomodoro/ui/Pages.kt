@@ -96,6 +96,7 @@ import com.example.pomodoro.TimerMode
 import com.example.pomodoro.TodoItem
 import com.example.pomodoro.W
 import com.example.pomodoro.accentColorOrNull
+import com.example.pomodoro.modeAccent
 import com.example.pomodoro.normalLine
 import com.example.pomodoro.openExternalUrl
 import com.example.pomodoro.requestNotificationPermission
@@ -264,6 +265,9 @@ private fun TimerRing(state: State, size: Dp) {
         )
         // [data-bg-active]：.ring-track 描边换成 outline 60%
         val track = if (c.bgActive) glassDim(c.outline, 0.60f) else c.containerHighest
+        // 网页 updateModeUI()：进度弧/呼吸点用当前模式色，.ring-progress 的 stroke 有 .5s 过渡
+        val accent = modeAccent(c, state.mode)
+        val accentAnim by animateColorAsState(accent, tween(500, easing = CssEase))
         // 网页 .ring-progress { transition: stroke-dashoffset .3s linear }
         val p by animateFloatAsState(state.progress.coerceIn(0f, 1f), tween(300, easing = LinearEasing))
         Canvas(Modifier.fillMaxSize()) {
@@ -273,10 +277,10 @@ private fun TimerRing(state: State, size: Dp) {
         // （CSS 模糊半径 10px ≈ σ5；Android 12 以下 Modifier.blur 为空操作，此时无发光）
         if (p > 0f) {
             Canvas(Modifier.fillMaxSize().blur(13.dp, BlurredEdgeTreatment.Unbounded)) {
-                drawRingArc(c.primary.copy(alpha = 0.70f), stroke.toPx(), p, StrokeCap.Round)
+                drawRingArc(accentAnim.copy(alpha = 0.70f), stroke.toPx(), p, StrokeCap.Round)
             }
             Canvas(Modifier.fillMaxSize()) {
-                drawRingArc(c.primary, stroke.toPx(), p, StrokeCap.Round)
+                drawRingArc(accentAnim, stroke.toPx(), p, StrokeCap.Round)
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -285,7 +289,7 @@ private fun TimerRing(state: State, size: Dp) {
                     .size(6.dp)
                     .scale(if (state.running) dotPulse else 0.6f)
                     .clip(CircleShape)
-                    .background(c.primary.copy(alpha = if (state.running) 1f else 0f)),
+                    .background(accent.copy(alpha = if (state.running) 1f else 0f)),
             )
             // 网页 .timer-time：font-size clamp(44px, 13vw, 64px)，各断点一致（1280 宽时封顶 64）
             val timeSize = (LocalScreenWidth.current.value * 0.13f).coerceIn(44f, 64f)

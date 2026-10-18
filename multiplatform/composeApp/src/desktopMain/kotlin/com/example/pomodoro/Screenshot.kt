@@ -51,6 +51,9 @@ fun main(args: Array<String>) {
         Case("desktop-timer-light", Page.Timer, "light"),
         Case("desktop-timer-aurora", Page.Timer, "aurora"),
         Case("desktop-timer-running", Page.Timer, "dark") { it.debugTimerState(remaining = 687, running = true, cycle = 2) },
+        // 模式色：进度弧/呼吸点/迷你环随模式切换（网页 updateModeUI()），0.5s stroke 过渡
+        Case("desktop-timer-short", Page.Timer, "light") { it.selectMode(TimerMode.Short) },
+        Case("desktop-timer-long", Page.Timer, "dark") { it.selectMode(TimerMode.Long) },
         Case("desktop-stats-dark", Page.Stats, "dark"),
         Case("desktop-stats-light", Page.Stats, "light"),
         Case("desktop-todos-light", Page.Todos, "light"),

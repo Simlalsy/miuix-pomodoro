@@ -128,8 +128,13 @@ async function main() {
   }, sessionId);
 
   // 预置主题 + 清空数据（在页面脚本运行前写入）；page 支持特殊状态：
-  //   running（计时运行中）、todos-items（带待办）、about（关于页）
-  const basePage = page === 'running' ? 'timer' : page === 'todos-items' ? 'todos' : page === 'about' ? 'settings' : page;
+  //   running（计时运行中）、todos-items（带待办）、about（关于页）、timer-short / timer-long（切换模式）
+  const modePage = page === 'timer-short' ? 'short' : page === 'timer-long' ? 'long' : null;
+  const basePage =
+    page === 'running' || modePage ? 'timer'
+      : page === 'todos-items' ? 'todos'
+        : page === 'about' ? 'settings'
+          : page;
   const settings = JSON.stringify({ theme, focusMinutes: 25, shortMinutes: 5, longMinutes: 15 });
   const presetTodos = page === 'todos-items'
     ? `localStorage.setItem('pomodoro.miuix.todos', ${JSON.stringify(JSON.stringify([
@@ -163,6 +168,10 @@ async function main() {
   }
   if (page === 'about') {
     await evalJs(`document.getElementById('aboutEntry')?.click()`);
+    await sleep(900);
+  } else if (modePage) {
+    // 切换模式：updateModeUI() 会把进度弧/呼吸点/迷你环改成模式色（.5s stroke 过渡）
+    await evalJs(`document.querySelector('#modeSegment button[data-mode="${modePage}"]')?.click()`);
     await sleep(900);
   } else if (page === 'running') {
     // 伪造「专注进行中、剩 11:27、本周期已完成 2 轮」的界面状态（与原生 debugTimerState 对应）

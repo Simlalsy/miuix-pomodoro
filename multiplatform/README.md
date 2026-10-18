@@ -194,6 +194,13 @@ node tools/webshot.js timer dark "%TEMP%\web-timer-dark.png" 393 852 2
   `--ease (0.4,0,0.2,1)`、`--nav-ease (0.4,1.2,0.95,0.97)`、波纹 `(0.22,1,0.36,1)`；
   所有 `transform` 过渡改用 `tween(时长, easing = CssSpring)` 而非 Compose `spring()`
   （后者的过冲曲线与浏览器 `cubic-bezier` 不同，观感偏“弹”）。
+- **模式色**（网页 `updateModeUI()`）：进度弧、环内呼吸点、迷你计时器环随模式取色 ——
+  专注 = `primary`、短休息 = `#36D167`、长休息 = `#00BCD4`；`.ring-progress` 的 stroke
+  有 0.5s `var(--ease)` 过渡，原生用 `animateColorAsState(tween(500, CssEase))` 复刻。
+  截图闭环里加了 `desktop-timer-short/-long` 用例（`node tools/webshot.js timer-short|timer-long`）。
+- **极光/背景图淡入**：`.aurora-bg { opacity: 0 → 1, .8s var(--ease) }`（切走时保留最后一帧淡出），
+  `.bg-image { opacity 0 → 1, .6s var(--ease) }`；截图时（`debugFreezeAnim`）直接落到终态，
+  保证与网页 `animation:none` 的基准帧可比。
 - **逐条复刻的关键帧**：`pageIn .35s`（页面容器）、`cardIn .5s + 20ms`（卡片内容，
   时钟卡片排除环本身）、`popIn .6s`（计时环）、`growbar .3s`（段选下划线，从左侧 scaleX）、
   `iconPop .42s`（开始/暂停图标：scale .5→1.18→1、rotate −25°→8°→0、opacity 0→1）、
