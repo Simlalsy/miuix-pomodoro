@@ -1,6 +1,7 @@
 package com.example.pomodoro.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -103,6 +104,8 @@ fun MiniTimerOverlay(state: State) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 // 迷你进度环（r=42/100，描边 6/100，与网页 svg 同比例）
+                // 网页 .mini-progress { transition: stroke-dashoffset .3s linear }
+                val progress by animateFloatAsState(state.progress.coerceIn(0f, 1f), tween(300, easing = LinearEasing))
                 Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
                     Canvas(Modifier.fillMaxSize()) {
                         val sw = size.width * 6f / 100f
@@ -110,10 +113,9 @@ fun MiniTimerOverlay(state: State) {
                         val tl = Offset(size.width / 2 - r, size.height / 2 - r)
                         val sz = Size(r * 2, r * 2)
                         drawArc(c.containerHighest, 0f, 360f, false, tl, sz, style = Stroke(sw))
-                        val p = state.progress.coerceIn(0f, 1f)
-                        if (p > 0f) {
+                        if (progress > 0f) {
                             // 网页 updateModeUI()：迷你环描边跟随当前模式色
-                            drawArc(modeAccent(c, state.mode), -90f, 360f * p, false, tl, sz, style = Stroke(sw, cap = StrokeCap.Round))
+                            drawArc(modeAccent(c, state.mode), -90f, 360f * progress, false, tl, sz, style = Stroke(sw, cap = StrokeCap.Round))
                         }
                     }
                 }

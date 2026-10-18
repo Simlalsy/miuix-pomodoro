@@ -202,6 +202,22 @@ node tools/webshot.js timer dark "%TEMP%\web-timer-dark.png" 393 852 2
 - **极光/背景图淡入**：`.aurora-bg { opacity: 0 → 1, .8s var(--ease) }`（切走时保留最后一帧淡出），
   `.bg-image { opacity 0 → 1, .6s var(--ease) }`；截图时（`debugFreezeAnim`）直接落到终态，
   保证与网页 `animation:none` 的基准帧可比。
+- **主题切换是「渐变」而不是「瞬切」**：网页给 `body`（.55s）、`.card`（.4s）、`.topbar`（.5s）、
+  `.rail`（.4s）、按钮/段选（.3–.35s）各自挂了 `background-color/color/border-color` 过渡；
+  原生在 `PomodoroTheme` 里用一份调色板插值统一复刻（`lerpColors`，0.45s `var(--ease)`，
+  取各元素时长的中间值），结构位（`dark`/`aurora`/`bgActive`）仍立即生效——与网页
+  `[data-theme]` 切换时的结构变化一致。连续切换时从「当前可见色」继续过渡，不会回跳。
+- **视口相关的字号/进度过渡**：`.timer-time { transition: font-size .3s var(--ease) }`
+  （缩放窗口时环内数字平滑变化）与 `.mini-progress { transition: stroke-dashoffset .3s linear }`
+  都用 `animateFloatAsState` 复刻。
+- **涟漪范围与网页一致**：网页只给
+  `.btn / .icon-btn / .segment button / .rail-item / .stepper button / .color-swatch / .tone-chip / .upload-btn / .switch`
+  挂涟漪；待办勾选（`.todo-check`）和删除按钮（`.todo-del`）在网页里只有按下缩放，原生已同步去掉这两处的涟漪。
+- **Miuix 原版动画的取舍**：库里的 `MiuixIndication`（弹簧涟漪）、`SinkFeedback`（按下「沉降」）、
+  `SpringEngine` 与网页的 CSS 曲线并不等价，直接用会让动效偏离网页，因此保持
+  「能对上就用 CSS 复刻」；只有在对不上的地方才考虑切 Miuix 原版（目前所有可见动效都已对上）。
+  若后续要做系统「减少动态效果」适配（网页 `prefers-reduced-motion` 会整体关掉动画），
+  再统一改走 Miuix 的 spring 系列会更省事。
 - **逐条复刻的关键帧**：`pageIn .35s`（页面容器）、`cardIn .5s + 20ms`（卡片内容，
   时钟卡片排除环本身）、`popIn .6s`（计时环）、`growbar .3s`（段选下划线，从左侧 scaleX）、
   `iconPop .42s`（开始/暂停图标：scale .5→1.18→1、rotate −25°→8°→0、opacity 0→1）、

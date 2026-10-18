@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -291,8 +292,10 @@ private fun TimerRing(state: State, size: Dp) {
                     .clip(CircleShape)
                     .background(accent.copy(alpha = if (state.running) 1f else 0f)),
             )
-            // 网页 .timer-time：font-size clamp(44px, 13vw, 64px)，各断点一致（1280 宽时封顶 64）
-            val timeSize = (LocalScreenWidth.current.value * 0.13f).coerceIn(44f, 64f)
+            // 网页 .timer-time：font-size clamp(44px, 13vw, 64px)，各断点一致（1280 宽时封顶 64）；
+            // 视口变化时 font-size 有 .3s var(--ease) 过渡（窗口缩放不该瞬跳）
+            val targetTimeSize = (LocalScreenWidth.current.value * 0.13f).coerceIn(44f, 64f)
+            val timeSize by animateFloatAsState(targetTimeSize, tween(300, easing = CssEase))
             // CSS line-height:1（行盒 = 字号）：浏览器把负半行距 (fontLine-height)/2 放在盒子上边缘之外，
             // 基线 = ascent - 半行距；Compose 直接把基线放在 ascent 处 —— 差一个半行距，这里手动补回。
             // Inter 度量：(1984+494)/2048 = 1.20996 → 半行距 = 0.10498em
@@ -328,13 +331,16 @@ private fun SessionDots(state: State) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         repeat(state.sessionsBeforeLong) { i ->
             val done = i < state.cycleDone
+            // 网页 .session-dots .dot { transition: all .3s var(--spring) }：底色与 done 的 4px 光晕都渐入
+            val fill by animateColorAsState(if (done) c.primary else c.containerHighest, tween(300, easing = CssSpring))
+            val glow by animateFloatAsState(if (done) 1f else 0f, tween(300, easing = CssSpring))
             // 圆点本体 10dp；done 的 4px 光晕是 box-shadow，不占布局（否则会把后续圆点推远）
             Box(
                 Modifier
                     .size(10.dp)
                     .drawBehind {
-                        if (done) drawCircle(c.soft, radius = 9.dp.toPx())
-                        drawCircle(if (done) c.primary else c.containerHighest, radius = 5.dp.toPx())
+                        if (glow > 0.001f) drawCircle(c.soft.copy(alpha = c.soft.alpha * glow), radius = 9.dp.toPx())
+                        drawCircle(fill, radius = 5.dp.toPx())
                     },
             )
         }
@@ -486,6 +492,10 @@ private fun weekdayCn(key: String): String {
 fun TodosPage(state: State) {
     val c = AppTheme.colors
     var input by remember { mutableStateOf("") }
+    // 网页 .bg-input { transition: border-color .3s var(--ease) } + :focus { border-color: primary }
+    val inputInteraction = remember { MutableInteractionSource() }
+    val inputFocused by inputInteraction.collectIsFocusedAsState()
+    val inputBorder by animateColorAsState(if (inputFocused) c.primary else c.divider, tween(300, easing = CssEase))
     CardBox {
         CardTitle("待办", " 清单")
         Spacer(Modifier.height(16.dp))
@@ -494,12 +504,13 @@ fun TodosPage(state: State) {
                 value = input,
                 onValueChange = { input = it },
                 singleLine = true,
+                interactionSource = inputInteraction,
                 textStyle = TextStyle(color = c.onSurface, fontSize = 14.sp, lineHeight = normalLine(14), fontFamily = AppTheme.font),
                 modifier = Modifier.weight(1f),
                 decorationBox = { inner ->
                     // .bg-input：border-box 高 46（padding 12/14 + 1px 描边 + 20px 行盒）
                     Box(
-                        Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(14.dp)).background(c.containerHigh).border(1.dp, c.divider, RoundedCornerShape(14.dp)).padding(horizontal = 15.dp, vertical = 13.dp),
+                        Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(14.dp)).background(c.containerHigh).border(1.dp, inputBorder, RoundedCornerShape(14.dp)).padding(horizontal = 15.dp, vertical = 13.dp),
                         contentAlignment = Alignment.CenterStart,
                     ) {
                         // 网页是 <input>：占位符永远单行，不会把输入框撑高
@@ -566,8 +577,7 @@ private fun TodoRow(todo: TodoItem, onToggle: () -> Unit, onDelete: () -> Unit) 
                 .clip(CircleShape)
                 .background(if (todo.done) c.primary else Color.Transparent)
                 .border(2.dp, if (todo.done) c.primary else c.outline, CircleShape)
-                .clickable(interactionSource = checkInteraction, indication = null, onClick = onToggle)
-                .miuixRipple(if (todo.done) c.onPrimary else c.outline),
+                .clickable(interactionSource = checkInteraction, indication = null, onClick = onToggle),
         )
         Text(
             todo.text,
@@ -591,8 +601,7 @@ private fun TodoRow(todo: TodoItem, onToggle: () -> Unit, onDelete: () -> Unit) 
                 .clip(RoundedCornerShape(12.dp))
                 .background(delBg)
                 .hoverable(delInteraction)
-                .clickable(interactionSource = delInteraction, indication = null, onClick = onDelete)
-                .miuixRipple(delFg),
+                .clickable(interactionSource = delInteraction, indication = null, onClick = onDelete),
             contentAlignment = Alignment.Center,
         ) {
             Symbol("delete", 20.dp, delFg)
@@ -708,16 +717,20 @@ fun SettingsPage(state: State) {
                 "custom" -> {
                     val scope = rememberCoroutineScope()
                     var url by remember { mutableStateOf(state.bgUrl) }
+                    val urlInteraction = remember { MutableInteractionSource() }
+                    val urlFocused by urlInteraction.collectIsFocusedAsState()
+                    val urlBorder by animateColorAsState(if (urlFocused) c.primary else c.divider, tween(300, easing = CssEase))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         BasicTextField(
                             value = url,
                             onValueChange = { url = it },
                             singleLine = true,
+                            interactionSource = urlInteraction,
                             textStyle = TextStyle(color = c.onSurface, fontSize = 14.sp, lineHeight = normalLine(14), fontFamily = AppTheme.font),
                             modifier = Modifier.weight(1f),
                             decorationBox = { inner ->
                                 Box(
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.containerHigh).border(1.dp, c.divider, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.containerHigh).border(1.dp, urlBorder, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
                                     contentAlignment = Alignment.CenterStart,
                                 ) {
                                     if (url.isEmpty()) Text("粘贴图片链接 https://...", color = c.variant, fontFamily = AppTheme.font, fontSize = 14.sp, lineHeight = normalLine(14))

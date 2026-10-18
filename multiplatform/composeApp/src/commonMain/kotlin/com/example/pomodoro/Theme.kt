@@ -1,10 +1,17 @@
 package com.example.pomodoro
 
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -157,11 +164,52 @@ object AppTheme {
 
 @Composable
 fun PomodoroTheme(theme: String, systemDark: Boolean, accent: String, bgActive: Boolean = false, content: @Composable () -> Unit) {
-    val colors = appColors(theme, systemDark, accent, bgActive)
+    val target = appColors(theme, systemDark, accent, bgActive)
+    // 网页切换主题时是元素级 CSS 过渡（body .55s、.card .4s、.topbar .5s、.rail .4s、按钮 .3s…），
+    // 而不是整体瞬切；这里用一份调色板插值统一复刻（0.45s，取中间值，其余由 themeWash 覆盖）
+    val fade = remember { Animatable(1f) }
+    var from by remember { mutableStateOf(target) }
+    var to by remember { mutableStateOf(target) }
+    LaunchedEffect(target) {
+        if (to == target) return@LaunchedEffect
+        // 从「当前可见色」开始过渡（连续切换时不会跳变）
+        from = lerpColors(from, to, fade.value)
+        to = target
+        fade.snapTo(0f)
+        fade.animateTo(1f, tween(450, easing = CssEase))
+    }
+    val colors = lerpColors(from, to, fade.value)
     CompositionLocalProvider(
         LocalAppColors provides colors,
         LocalAppType provides AppTypography(AppFonts.inter, AppFonts.symbols),
         content = content,
+    )
+}
+
+/** 两套调色板按进度插值（结构位 dark/aurora/bgActive 立刻取新值，与网页 `[data-theme]` 切换一致） */
+internal fun lerpColors(a: AppColors, b: AppColors, t: Float): AppColors {
+    if (t >= 1f) return b
+    fun l(x: Color, y: Color) = androidx.compose.ui.graphics.lerp(x, y, t)
+    return b.copy(
+        primary = l(a.primary, b.primary),
+        onPrimary = l(a.onPrimary, b.onPrimary),
+        primaryContainer = l(a.primaryContainer, b.primaryContainer),
+        soft = l(a.soft, b.soft),
+        background = l(a.background, b.background),
+        surface = l(a.surface, b.surface),
+        container = l(a.container, b.container),
+        containerHigh = l(a.containerHigh, b.containerHigh),
+        containerHighest = l(a.containerHighest, b.containerHighest),
+        onSurface = l(a.onSurface, b.onSurface),
+        variant = l(a.variant, b.variant),
+        outline = l(a.outline, b.outline),
+        divider = l(a.divider, b.divider),
+        short = l(a.short, b.short),
+        long = l(a.long, b.long),
+        error = l(a.error, b.error),
+        dangerSoft = l(a.dangerSoft, b.dangerSoft),
+        shadow = l(a.shadow, b.shadow),
+        shadowLg = l(a.shadowLg, b.shadowLg),
     )
 }
 
